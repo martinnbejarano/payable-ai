@@ -1,71 +1,88 @@
 /**
  * AI Agent — Economic Reasoning Layer
  *
- * This is the core of Payable.ai. The agent:
- * 1. Receives a task + budget from the user
- * 2. Discovers available payable APIs via /api/discover
- * 3. Evaluates each API: price vs budget, latency vs task complexity
- * 4. Makes an economic decision: selects the best API within budget
- * 5. Pays automatically via x402 (no human intervention)
- * 6. Returns results + full reasoning trace
- *
- * The key insight: agents don't just USE tools — they REASON about cost.
+ * The agent discovers capabilities (not individual APIs), evaluates providers
+ * within each capability by cost/value, rejects overpriced options, and
+ * acquires the cheapest eligible one via x402.
  */
 
 import { openai } from '@ai-sdk/openai'
 import { streamText, tool } from 'ai'
 import { z } from 'zod'
-import type { PayableAPI } from '@payable-ai/types'
+import type { Capability } from '@payable-ai/types'
 
-/** Returns a streamText result for the agent task using the payableSearch tool. */
 export function createAgentStream(task: string, budget: number, walletAddress: string) {
   return streamText({
     model: openai('gpt-4o-mini'),
     system: `You are an autonomous AI agent with a budget of $${budget} USDC.
-Your job is to complete tasks by discovering and paying for APIs using the x402 protocol.
-Always reason about cost before acting. Only call APIs you can afford.
+Your job is to complete tasks by discovering capabilities from a compute market and acquiring the cheapest eligible provider via the x402 protocol.
+Always reason about cost/value before acting. Reject providers whose cost delta exceeds task value threshold.
 Wallet: ${walletAddress}`,
     prompt: task,
     tools: {
       payableSearch: tool({
         description:
-          'Discover payable search APIs, select the cheapest option within budget, and execute a search query.',
+          'Query the compute market for web-search capability, select the cheapest eligible provider, acquire it via x402, and execute the query.',
         parameters: z.object({
           query: z.string().describe('The search query to execute'),
         }),
         execute: async ({ query }) => {
-          // TODO: Use x402/fetch with automatic payment once CDP credentials are set
-          const discoverRes = await fetch(
-            `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/discover`
-          )
-          const { apis } = (await discoverRes.json()) as { apis: PayableAPI[] }
+          const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+          const discoverRes = await fetch(`${base}/api/discover`)
+          const { capabilities } = (await discoverRes.json()) as { capabilities: Capability[] }
 
-          const affordable = apis
-            .filter((api) => api.priceUsdc <= budget)
-            .sort((a, b) => a.priceUsdc - b.priceUsdc)
-
-          if (affordable.length === 0) {
-            return { error: 'No APIs available within budget', budget, cheapestAvailable: apis[0]?.priceUsdc }
+          const searchCap = capabilities.find((c) => c.id === 'web-search')
+          if (!searchCap) {
+            return { error: 'web-search capability not found in compute market' }
           }
 
-          const selected = affordable[0]
+          const eligible = searchCap.providers
+            .filter((p) => p.priceUsdc <= budget)
+            .sort((a, b) => a.priceUsdc - b.priceUsdc)
 
-          const searchRes = await fetch(
-            `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}${selected.endpoint}?q=${encodeURIComponent(query)}`
-          )
+          const rejected = searchCap.providers.filter((p) => p.priceUsdc > budget)
+
+          if (eligible.length === 0) {
+            return {
+              error: 'No providers within budget',
+              budget,
+              cheapestAvailable: searchCap.providers[0]?.priceUsdc,
+            }
+          }
+
+          const selected = eligible[0]
+          const rejectedProviders = rejected.map((p) => p.name)
+          const savedUsdc = rejected.reduce((sum, p) => sum + (p.priceUsdc - selected.priceUsdc), 0)
+
+          if (!selected.endpoint) {
+            return {
+              error: 'Selected provider has no live endpoint (mock only)',
+              selectedProvider: selected.name,
+              rejectedProviders,
+              savedUsdc,
+            }
+          }
+
+          // TODO: replace with createX402Fetch from lib/x402.ts once CDP credentials are set
+          const searchRes = await fetch(`${base}${selected.endpoint}?q=${encodeURIComponent(query)}`)
 
           if (!searchRes.ok) {
             return {
               error: `Search endpoint returned ${searchRes.status}`,
-              selectedApi: selected.name,
-              hint: '402 means payment header is required — x402/fetch handles this automatically',
+              selectedProvider: selected.name,
+              rejectedProviders,
+              savedUsdc,
+              hint: '402 means payment proof required — x402/fetch handles this automatically',
             }
           }
 
           const results = await searchRes.json()
           return {
-            selectedApi: selected.name,
+            selectedProvider: selected.name,
+            selectedCapability: searchCap.label,
             priceUsdc: selected.priceUsdc,
+            rejectedProviders,
+            savedUsdc: parseFloat(savedUsdc.toFixed(4)),
             query,
             results,
           }

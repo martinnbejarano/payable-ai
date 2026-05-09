@@ -1,13 +1,18 @@
-export interface PayableAPI {
+export interface Provider {
   id: string
   name: string
-  description: string
-  endpoint: string
   priceUsdc: number
-  currency: string
-  network: string
   latencyMs: number
-  category: string
+  live: boolean
+  endpoint?: string
+  network: string
+}
+
+export interface Capability {
+  id: string
+  label: string
+  live: boolean
+  providers: Provider[]
 }
 
 export interface AgentTask {
@@ -18,30 +23,40 @@ export interface AgentTask {
 
 export type ReasoningLineType =
   | 'sys'
-  | 'api'
-  | 'think'
+  | 'found'
+  | 'market'
+  | 'provider'
+  | 'eval'
+  | 'reject'
   | 'decision'
   | 'http'
-  | 'pay'
-  | 'confirmed'
+  | 'settled'
+  | 'complete'
 
 export interface ReasoningLine {
   type: ReasoningLineType
   text: string
+  indent?: number
   timestamp: number
+  phase: string
 }
 
 export interface Transaction {
   hash: string
   amount: number
-  api: string
+  capability: string
+  provider: string
+  task: string
   timestamp: string
   status: 'confirmed' | 'pending' | 'failed'
 }
 
 export interface AgentResponse {
   reasoning: ReasoningLine[]
-  selectedApi: PayableAPI
+  selectedProvider: Provider
+  selectedCapability: string
+  rejectedProviders: string[]
+  savedUsdc: number
   txHash: string
   results: string[]
 }
