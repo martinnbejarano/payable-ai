@@ -18,7 +18,6 @@ import type {
   AgentPhase,
   AgentResponse,
   AgentStreamEvent,
-  Capability,
   CapabilityStep,
   Provider,
   ReasoningLine,
@@ -29,6 +28,7 @@ import type {
 } from '@payable-ai/types'
 import { settleOnchain } from './x402'
 import { planCapabilities, type KnownCapability } from './planner'
+import { CAPABILITIES } from './capabilities'
 
 const VALUE_THRESHOLD_USDC = 0.005
 
@@ -95,18 +95,22 @@ export function runAgent(
         line('sys', plan.rationale, 'PLANNING', { indent: true })
         await sleep(420)
 
-        // ─── Discover compute market (once) ───────────────────────────────
+        // ─── Discover compute market (in-process, no self-fetch) ──────────
+        // Prefer the public production alias when available — VERCEL_URL is
+        // the per-deployment URL which is auth-gated for previews and would
+        // 401 the agent's own self-fetch when used as the base. The order is
+        // explicit override → public prod alias → branch URL → per-deploy
+        // (last resort) → localhost.
         const base =
-          process.env.NEXT_PUBLIC_APP_URL ??
-          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
-        const discoverRes = await fetch(`${base}/api/discover`)
-        if (!discoverRes.ok) {
-          fail(`Discover failed: ${discoverRes.status}`)
-          return
-        }
-        const { capabilities } = (await discoverRes.json()) as {
-          capabilities: Capability[]
-        }
+          process.env.NEXT_PUBLIC_APP_URL ||
+          (process.env.VERCEL_PROJECT_PRODUCTION_URL
+            ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+            : process.env.VERCEL_BRANCH_URL
+              ? `https://${process.env.VERCEL_BRANCH_URL}`
+              : process.env.VERCEL_URL
+                ? `https://${process.env.VERCEL_URL}`
+                : 'http://localhost:3000')
+        const capabilities = CAPABILITIES
 
         const steps: CapabilityStep[] = []
         let prevOcrText: string | undefined
