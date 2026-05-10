@@ -90,6 +90,10 @@ The settlement TX is signed by the gateway keypair via `settleOnchain` — a mem
 - **Center** — Task input + AgentTrace reasoning panel (streams live). Includes a `Paperclip` button to attach an image (data URL, ≤4MB) for OCR-bearing tasks; first sample task ships with a pre-bundled `/sample-screenshot.png`.
 - **Right** — Execution Log: per-task card with one sub-row per capability step (capability, provider, rejected, cost, saved, tx). Card footer shows total cost + total saved across all steps. Header stats: tasks run / providers rejected / USDC saved.
 
+### Public demo endpoint
+
+`POST /api/v1/run` accepts `{ task, budget?, walletAddress?, imageUrl? }` and returns a single JSON `AgentResponse` (not a stream). When `walletAddress` is omitted (or `PAYABLE_DEMO_FORCE=1`), it returns a synthetic `AgentResponse & { demo: true }` from `lib/v1-demo.ts` — no onchain settlement, fixture OCR text and 3 stock search results, deterministic `demo-<cap>-<hash8>` TX strings. Used by the IntegrateSnippet card on the dashboard right panel so judges can copy the curl and run it from their terminal without a wallet. Has no rate limiting or auth — production-gating TBD.
+
 ### Error responses
 
 All API routes return `{ error: string, code: string }` on failure with appropriate HTTP status codes.

@@ -24,6 +24,7 @@ import {
   truncAddr,
 } from '@/components/payable/primitives'
 import { AgentTrace, useAgentRun } from '@/components/payable/agent-trace'
+import { IntegrateSnippet } from '@/components/payable/integrate-snippet'
 import { cn } from '@/lib/utils'
 import { usePayableSession } from '@/components/payable/session'
 import { navigateWithTransition } from '@/components/payable/nav'
@@ -797,6 +798,13 @@ function RightPanel({
             <ExecutionCard key={e.id} exec={e} onOpenStep={onOpenStep} />
           ))
         )}
+      </div>
+
+      <div className="px-3 pt-2 pb-2 border-t border-zinc-900 shrink-0">
+        <IntegrateSnippet
+          task={executions[0]?.task ?? null}
+          hasImage={!!executions[0]?.steps.some((s) => s.capabilityId === 'ocr')}
+        />
       </div>
 
       <div className="px-4 py-2.5 border-t border-zinc-900 flex items-center justify-between font-mono text-[10px] text-zinc-600 shrink-0">
