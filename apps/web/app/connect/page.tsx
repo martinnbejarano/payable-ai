@@ -1,8 +1,10 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { ViewTransition } from '@/components/payable/view-transition'
 import {
   Badge,
@@ -10,29 +12,68 @@ import {
   PayableCard,
   PulseDot,
   WalletGlyph,
-  randAddr,
   truncAddr,
 } from '@/components/payable/primitives'
 import { cn } from '@/lib/utils'
 import { usePayableSession } from '@/components/payable/session'
 import { navigateWithTransition } from '@/components/payable/nav'
+import { getUsdcBalance } from '@/lib/solana'
 
 const QUICK_AMOUNTS = [0.005, 0.01, 0.05, 0.1] as const
 
 export default function ConnectPage() {
   const router = useRouter()
   const { wallet, setWallet, setInitialBudget } = usePayableSession()
+  const { publicKey, connected, connecting, disconnect } = useWallet()
+  const { setVisible, visible: modalVisible } = useWalletModal()
+
   const [amount, setAmount] = useState('0.0100')
-  const [connecting, setConnecting] = useState(false)
   const [deploying, setDeploying] = useState(false)
+  const [balance, setBalance] = useState<number | null>(null)
+  const [balanceError, setBalanceError] = useState<string | null>(null)
+
+  // Mirror wallet adapter state into the session
+  useEffect(() => {
+    if (connected && publicKey) {
+      setWallet(publicKey.toBase58())
+    } else if (!connected) {
+      setWallet(null)
+    }
+  }, [connected, publicKey, setWallet])
+
+  // Read on-chain USDC balance once connected
+  useEffect(() => {
+    if (!publicKey) {
+      setBalance(null)
+      return
+    }
+    let cancelled = false
+    setBalanceError(null)
+    getUsdcBalance(publicKey.toBase58())
+      .then((b) => {
+        if (!cancelled) setBalance(b)
+      })
+      .catch((err) => {
+        if (!cancelled) setBalanceError(err instanceof Error ? err.message : 'balance read failed')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [publicKey])
 
   const connectWallet = () => {
-    if (wallet) return
-    setConnecting(true)
-    setTimeout(() => {
-      setWallet(randAddr())
-      setConnecting(false)
-    }, 850)
+    if (connected || connecting) return
+    setVisible(true)
+  }
+
+  const isOpening = connecting || (modalVisible && !connected)
+
+  const onDisconnect = async () => {
+    try {
+      await disconnect()
+    } finally {
+      setWallet(null)
+    }
   }
 
   const deploy = () => {
@@ -41,10 +82,13 @@ export default function ConnectPage() {
     setTimeout(() => {
       setInitialBudget(parseFloat(amount) || 0.01)
       navigateWithTransition(router, '/dashboard', 'nav-forward')
-    }, 700)
+    }, 400)
   }
 
   const onBack = () => navigateWithTransition(router, '/', 'nav-back')
+
+  const requestedAmount = parseFloat(amount) || 0
+  const insufficient = balance !== null && balance < requestedAmount && requestedAmount > 0
 
   return (
     <ViewTransition
@@ -110,7 +154,7 @@ export default function ConnectPage() {
 
                 <button
                   onClick={connectWallet}
-                  disabled={!!wallet || connecting}
+                  disabled={!!wallet || isOpening}
                   className={cn(
                     'group w-full h-14 rounded-xl border transition-all duration-200 flex items-center justify-between px-4 active:scale-[0.99]',
                     wallet
@@ -134,7 +178,7 @@ export default function ConnectPage() {
                       ) : (
                         <>
                           <div className="text-[13px] text-zinc-100 font-medium">
-                            {connecting ? 'Opening Phantom…' : 'Connect Phantom'}
+                            {isOpening ? 'Opening Phantom…' : 'Connect Phantom'}
                           </div>
                           <div className="text-[11.5px] text-zinc-500 mt-0.5">
                             Sign in to deploy your agent
@@ -150,13 +194,13 @@ export default function ConnectPage() {
                         tabIndex={0}
                         onClick={(e) => {
                           e.stopPropagation()
-                          setWallet(null)
+                          onDisconnect()
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
                             e.stopPropagation()
-                            setWallet(null)
+                            onDisconnect()
                           }
                         }}
                         className="text-[11px] text-zinc-500 hover:text-zinc-200 px-2 py-1 rounded cursor-pointer"
@@ -173,6 +217,19 @@ export default function ConnectPage() {
                     />
                   )}
                 </button>
+
+                {wallet && (
+                  <div className="mt-2 flex items-center justify-between font-mono text-[10.5px] text-zinc-500">
+                    <span>devnet USDC balance</span>
+                    <span className="text-zinc-300 num-tab">
+                      {balanceError
+                        ? '—'
+                        : balance === null
+                          ? 'loading…'
+                          : `${balance.toFixed(4)} USDC`}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Divider */}
@@ -240,18 +297,31 @@ export default function ConnectPage() {
                       </button>
                     ))}
                     <span className="ml-auto text-[10.5px] font-mono text-zinc-600">
-                      ≈ {(parseFloat(amount) || 0).toFixed(4)} USDC
+                      ≈ {requestedAmount.toFixed(4)} USDC
                     </span>
                   </div>
+                  {insufficient && (
+                    <div className="mt-2 text-[10.5px] font-mono text-red-400/80">
+                      insufficient devnet USDC — get test tokens at{' '}
+                      <a
+                        href="https://faucet.circle.com/"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-2"
+                      >
+                        faucet.circle.com
+                      </a>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <button
                 onClick={deploy}
-                disabled={!wallet || deploying}
+                disabled={!wallet || deploying || insufficient}
                 className={cn(
                   'mt-6 w-full h-12 rounded-xl font-medium text-[14px] tracking-tight inline-flex items-center justify-center gap-2 transition-all active:scale-[0.99]',
-                  wallet
+                  wallet && !insufficient
                     ? 'bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_0_1px_rgba(255,255,255,0.4)_inset,0_12px_32px_-12px_rgba(255,255,255,0.4)]'
                     : 'bg-zinc-900 text-zinc-600 cursor-not-allowed border border-zinc-800',
                 )}
@@ -274,7 +344,9 @@ export default function ConnectPage() {
               This uses Solana Devnet. No real funds required.
               &nbsp;
               <a
-                href="#"
+                href="https://faucet.circle.com/"
+                target="_blank"
+                rel="noreferrer"
                 className="text-zinc-400 hover:text-zinc-100 underline underline-offset-2 decoration-zinc-700"
               >
                 Get test USDC →

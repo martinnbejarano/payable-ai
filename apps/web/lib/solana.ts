@@ -4,8 +4,10 @@ import { Connection, Keypair, PublicKey } from '@solana/web3.js'
 import { getAccount, getAssociatedTokenAddress } from '@solana/spl-token'
 import bs58 from 'bs58'
 
-export const USDC_DEVNET_MINT = 'Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr'
-// ↑ Circle's official devnet USDC mint address
+// Circle's official Solana Devnet USDC mint (used by faucet.circle.com).
+// Older docs reference Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr — that
+// mint still exists onchain but the active Circle faucet now mints to this one.
+export const USDC_DEVNET_MINT = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
 
 /** Returns a Connection to Solana devnet via the configured RPC URL. */
 export function getConnection(): Connection {

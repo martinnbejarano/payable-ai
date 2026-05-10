@@ -33,13 +33,55 @@ export type ReasoningLineType =
   | 'settled'
   | 'complete'
 
+export type AgentPhase = 'IDLE' | 'EVALUATING' | 'DECIDING' | 'ACQUIRING' | 'COMPLETE'
+
 export interface ReasoningLine {
   type: ReasoningLineType
   text: string
-  indent?: number
+  indent?: boolean
   timestamp: number
-  phase: string
+  phase: AgentPhase
+  costDelta?: number
+  costDeltaPct?: number
+  providerId?: string
+  txHash?: string
 }
+
+export type RejectionReason =
+  | 'cost delta exceeds task value threshold'
+  | 'exceeds budget'
+  | 'mock-only — no live endpoint'
+
+export interface RejectedProvider {
+  id: string
+  name: string
+  reason: RejectionReason
+  priceUsdc: number
+  costDelta: number
+  costDeltaPct: number
+}
+
+export interface SearchResult {
+  title: string
+  url: string
+  snippet?: string
+}
+
+export interface AgentResponse {
+  selectedProvider: Provider
+  selectedCapability: string
+  rejectedProviders: RejectedProvider[]
+  savedUsdc: number
+  txHash: string
+  costUsdc: number
+  results: SearchResult[]
+}
+
+export type AgentStreamEvent =
+  | { kind: 'line'; line: ReasoningLine }
+  | { kind: 'phase'; phase: AgentPhase }
+  | { kind: 'result'; response: AgentResponse }
+  | { kind: 'error'; message: string }
 
 export interface Transaction {
   hash: string
@@ -49,14 +91,4 @@ export interface Transaction {
   task: string
   timestamp: string
   status: 'confirmed' | 'pending' | 'failed'
-}
-
-export interface AgentResponse {
-  reasoning: ReasoningLine[]
-  selectedProvider: Provider
-  selectedCapability: string
-  rejectedProviders: string[]
-  savedUsdc: number
-  txHash: string
-  results: string[]
 }

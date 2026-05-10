@@ -1,19 +1,15 @@
 /**
  * POST /api/agent
  *
- * Accepts { task, budget, walletAddress } and streams an AI agent response
- * using Vercel AI SDK. The agent uses the `payableSearch` tool to discover
- * APIs, pick the cheapest within budget, pay via x402, and return results.
- *
- * Flow:
- *   1. Parse and validate the request body
- *   2. Create a streamText agent via lib/agent.ts
- *   3. The agent calls payableSearch tool as needed
- *   4. Stream the response back using toDataStreamResponse()
+ * Accepts { task, budget, walletAddress } and streams agent reasoning + result
+ * events back as NDJSON (one JSON-encoded AgentStreamEvent per line).
  */
 
 import { type NextRequest } from 'next/server'
-import { createAgentStream } from '@/lib/agent'
+import { runAgent } from '@/lib/agent'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,8 +39,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const result = createAgentStream(task, budget, walletAddress)
-    return result.toDataStreamResponse()
+    return new Response(runAgent(task, budget, walletAddress), {
+      headers: {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'Content-Encoding': 'identity',
+        'X-Accel-Buffering': 'no',
+        'Transfer-Encoding': 'chunked',
+      },
+    })
   } catch (err) {
     console.error('[/api/agent]', err)
     return Response.json(

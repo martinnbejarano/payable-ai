@@ -2,66 +2,21 @@
 
 import { Cpu } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
+import type {
+  AgentPhase,
+  AgentResponse,
+  AgentStreamEvent,
+  ReasoningLine,
+  ReasoningLineType,
+} from '@payable-ai/types'
 import { cn } from '@/lib/utils'
-import { PulseDot, randHex, truncAddr } from './primitives'
+import { PulseDot } from './primitives'
 
-/* ── Phases ───────────────────────────────────────────────── */
-export type Phase = 'IDLE' | 'EVALUATING' | 'DECIDING' | 'ACQUIRING' | 'COMPLETE'
-
-/* ── Line types ───────────────────────────────────────────── */
-type LineType =
-  | 'sys'
-  | 'found'
-  | 'market'
-  | 'provider'
-  | 'eval'
-  | 'reject'
-  | 'decision'
-  | 'http'
-  | 'settled'
-  | 'complete'
-
-type Line = {
-  type: LineType
-  text: string
-  indent?: boolean
-  phase: Phase
-  delay: number
-}
-
-/* ── Trace script ─────────────────────────────────────────── */
-function buildTraceScript(task: string, txHash: string, remaining: number): Line[] {
-  const t = (type: LineType, text: string, phase: Phase, delay: number, indent?: boolean): Line =>
-    ({ type, text, phase, delay, ...(indent ? { indent: true } : {}) })
-
-  return [
-    t('sys',      'Parsing task...',                                          'EVALUATING', 480),
-    t('sys',      `Goal: "${task}"`,                                          'EVALUATING', 540),
-    t('sys',      'Classifying required capability...',                       'EVALUATING', 700),
-    t('found',    'Required: [ web search ]',                                 'EVALUATING', 480),
-    t('sys',      'Querying compute market...',                               'EVALUATING', 700),
-    t('market',   'WEB SEARCH — 2 providers available',                       'EVALUATING', 700),
-    t('provider', 'tavily-standard    0.002 USDC    conf 0.82    lat 380ms', 'EVALUATING', 380, true),
-    t('provider', 'serpapi-premium    0.015 USDC    conf 0.89    lat 210ms', 'EVALUATING', 380, true),
-    t('eval',     'Evaluating cost/value tradeoffs...',                       'DECIDING',   760, true),
-    t('eval',     'Δ cost: +0.013 USDC for +8% confidence gain',             'DECIDING',   640, true),
-    t('eval',     'Task value threshold: 0.005 USDC',                        'DECIDING',   540, true),
-    t('eval',     'Premium cost delta exceeds task value threshold',          'DECIDING',   480, true),
-    t('reject',   'serpapi-premium → REJECTED',                               'DECIDING',   480),
-    t('decision', '→ OPTIMAL: tavily-standard @ 0.002 USDC',                 'DECIDING',   780),
-    t('sys',      'Acquiring capability via x402...',                         'ACQUIRING',  720),
-    t('http',     'GET /capabilities/web-search/tavily-standard',             'ACQUIRING',  460, true),
-    t('http',     '← 402 · payment required · 0.002 USDC',                   'ACQUIRING',  380, true),
-    t('http',     'Settling on solana:devnet...',                             'ACQUIRING',  1100, true),
-    t('settled',  `✓ Settled — capability acquired · ${truncAddr(txHash, 5, 5)}`, 'ACQUIRING', 1300, true),
-    t('sys',      'Executing web search...',                                  'COMPLETE',   480),
-    t('http',     '← 200 OK · 4 results',                                    'COMPLETE',   700, true),
-    t('complete', `Task complete · 0.002 USDC spent · budget remaining ${remaining.toFixed(4)} USDC`, 'COMPLETE', 420),
-  ]
-}
+export type Phase = AgentPhase
 
 /* ── Styling ──────────────────────────────────────────────── */
-function lineClass(type: LineType): string {
+function lineClass(type: ReasoningLineType): string {
   switch (type) {
     case 'sys':      return 'text-zinc-500'
     case 'found':    return 'text-zinc-300'
@@ -109,7 +64,7 @@ export function PhasePill({ phase }: { phase: Phase }) {
 }
 
 /* ── TraceLine ────────────────────────────────────────────── */
-function TraceLine({ line, idx }: { line: Line; idx: number }) {
+function TraceLine({ line, idx }: { line: ReasoningLine; idx: number }) {
   const isDecision = line.type === 'decision'
   return (
     <div
@@ -134,10 +89,12 @@ export function AgentTrace({
   phase,
   lines,
   running,
+  costUsdc,
 }: {
   phase: Phase
-  lines: Line[]
+  lines: ReasoningLine[]
   running: boolean
+  costUsdc?: number
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -147,7 +104,8 @@ export function AgentTrace({
   }, [lines, running])
 
   const evals = lines.filter((l) => l.type === 'eval').length
-  const cost = lines.some((l) => l.type === 'settled' || l.type === 'complete') ? 0.002 : 0
+  const cost =
+    costUsdc ?? (lines.some((l) => l.type === 'settled' || l.type === 'complete') ? 0.002 : 0)
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 overflow-hidden flex flex-col h-full">
@@ -210,35 +168,37 @@ export function AgentTrace({
 }
 
 /* ── useAgentRun ──────────────────────────────────────────── */
+type RunArgs = { task: string; budget: number; walletAddress: string }
+
 type UseAgentRunArgs = {
   onTxConfirmed?: (info: { hash: string; task: string }) => void
-  onComplete?: (info: { hash: string; task: string }) => void
-  getRemaining?: () => number
+  onComplete?: (info: { response: AgentResponse; task: string }) => void
+  onError?: (info: { message: string; task: string }) => void
 }
 
-export function useAgentRun({ onTxConfirmed, onComplete, getRemaining }: UseAgentRunArgs = {}) {
+export function useAgentRun({ onTxConfirmed, onComplete, onError }: UseAgentRunArgs = {}) {
   const [phase, setPhase] = useState<Phase>('IDLE')
-  const [lines, setLines] = useState<Line[]>([])
+  const [lines, setLines] = useState<ReasoningLine[]>([])
   const [running, setRunning] = useState(false)
   const [lastTask, setLastTask] = useState<string | null>(null)
   const [lastTx, setLastTx] = useState<string | null>(null)
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
-  const cbRef = useRef({ onTxConfirmed, onComplete, getRemaining })
+  const abortRef = useRef<AbortController | null>(null)
+  const cbRef = useRef({ onTxConfirmed, onComplete, onError })
 
   useEffect(() => {
-    cbRef.current = { onTxConfirmed, onComplete, getRemaining }
-  }, [onTxConfirmed, onComplete, getRemaining])
+    cbRef.current = { onTxConfirmed, onComplete, onError }
+  }, [onTxConfirmed, onComplete, onError])
 
   useEffect(
     () => () => {
-      timersRef.current.forEach(clearTimeout)
+      abortRef.current?.abort()
     },
     [],
   )
 
   const reset = useCallback(() => {
-    timersRef.current.forEach(clearTimeout)
-    timersRef.current = []
+    abortRef.current?.abort()
+    abortRef.current = null
     setPhase('IDLE')
     setLines([])
     setRunning(false)
@@ -246,35 +206,79 @@ export function useAgentRun({ onTxConfirmed, onComplete, getRemaining }: UseAgen
     setLastTx(null)
   }, [])
 
-  const run = useCallback((task: string) => {
-    timersRef.current.forEach(clearTimeout)
-    timersRef.current = []
-    const txHash = randHex(64)
-    const remaining = Math.max(0, (cbRef.current.getRemaining?.() ?? 0.01) - 0.002)
-    const script = buildTraceScript(task, txHash, remaining)
+  const run = useCallback(async ({ task, budget, walletAddress }: RunArgs) => {
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+
     setLines([])
     setPhase('EVALUATING')
     setRunning(true)
     setLastTask(task)
-    setLastTx(txHash)
+    setLastTx(null)
 
-    let cum = 0
-    script.forEach((line, idx) => {
-      cum += line.delay
-      const t = setTimeout(() => {
-        setLines((prev) => [...prev, line])
-        setPhase(line.phase)
-        if (line.type === 'settled') {
-          cbRef.current.onTxConfirmed?.({ hash: txHash, task })
+    try {
+      const res = await fetch('/api/agent', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ task, budget, walletAddress }),
+        signal: ac.signal,
+      })
+      if (!res.ok || !res.body) {
+        const errText = await res.text().catch(() => '')
+        throw new Error(`/api/agent ${res.status} ${errText}`)
+      }
+
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const parts = buf.split('\n')
+        buf = parts.pop() ?? ''
+        for (const part of parts) {
+          if (!part.trim()) continue
+          let ev: { kind: string; [k: string]: unknown }
+          try {
+            ev = JSON.parse(part)
+          } catch {
+            continue
+          }
+          if (ev.kind === '_pad') continue
+          // flushSync forces React to render between events even when several
+          // chunks arrive within the same microtask, so the trace never
+          // collapses into a single render ("lineal" appearance).
+          flushSync(() => {
+            const e = ev as unknown as AgentStreamEvent
+            if (e.kind === 'line') {
+              setLines((prev) => [...prev, e.line])
+              if (e.line.type === 'settled' && e.line.txHash) {
+                setLastTx(e.line.txHash)
+                cbRef.current.onTxConfirmed?.({ hash: e.line.txHash, task })
+              }
+            } else if (e.kind === 'phase') {
+              setPhase(e.phase)
+            } else if (e.kind === 'result') {
+              cbRef.current.onComplete?.({ response: e.response, task })
+            } else if (e.kind === 'error') {
+              cbRef.current.onError?.({ message: e.message, task })
+            }
+          })
         }
-        if (idx === script.length - 1) {
-          setPhase('COMPLETE')
-          setRunning(false)
-          cbRef.current.onComplete?.({ hash: txHash, task })
-        }
-      }, cum)
-      timersRef.current.push(t)
-    })
+      }
+    } catch (err) {
+      if (ac.signal.aborted) return
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[useAgentRun]', err)
+      cbRef.current.onError?.({ message, task })
+    } finally {
+      if (!ac.signal.aborted) {
+        setRunning(false)
+      }
+    }
   }, [])
 
   return { phase, lines, running, lastTask, lastTx, run, reset }

@@ -1,7 +1,8 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { AgentResponse } from '@payable-ai/types'
 import { ViewTransition } from '@/components/payable/view-transition'
 import {
   Activity,
@@ -16,13 +17,13 @@ import {
 import {
   Logo,
   PulseDot,
-  SectionLabel,
   truncAddr,
 } from '@/components/payable/primitives'
 import { AgentTrace, useAgentRun } from '@/components/payable/agent-trace'
 import { cn } from '@/lib/utils'
 import { usePayableSession } from '@/components/payable/session'
 import { navigateWithTransition } from '@/components/payable/nav'
+import { useAgentBalance } from '@/hooks/useAgentBalance'
 
 /* ── Compute market data ──────────────────────────────────── */
 const CAPABILITIES = [
@@ -86,11 +87,13 @@ const SAMPLE_TASKS = [
 function TopNav({
   wallet,
   balance,
+  balanceLoading,
   onDisconnect,
   onLogo,
 }: {
   wallet: string | null
-  balance: number
+  balance: number | null
+  balanceLoading: boolean
   onDisconnect: () => void
   onLogo: () => void
 }) {
@@ -135,7 +138,7 @@ function TopNav({
           <span className="font-mono text-[11px] text-zinc-300">{truncAddr(wallet, 4, 4)}</span>
           <span className="text-zinc-700">·</span>
           <span className="font-mono text-[11px] text-white font-medium num-tab">
-            {balance.toFixed(4)}
+            {balance === null ? (balanceLoading ? '…' : '0.0000') : balance.toFixed(4)}
           </span>
           <span className="font-mono text-[10px] text-zinc-500">USDC</span>
           <button
@@ -259,16 +262,16 @@ function CapabilityBlock({
 }
 
 function LeftPanel({
-  budget,
+  remaining,
   initialBudget,
   decisionMap,
 }: {
-  budget: number
+  remaining: number
   initialBudget: number
   decisionMap: DecisionMap
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ 'web-search': true })
-  const usedPct = Math.max(0, Math.min(100, ((initialBudget - budget) / initialBudget) * 100))
+  const usedPct = Math.max(0, Math.min(100, ((initialBudget - remaining) / initialBudget) * 100))
 
   const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
 
@@ -286,7 +289,7 @@ function LeftPanel({
         </div>
         <div className="flex items-baseline gap-1.5">
           <span className="font-mono text-[32px] font-semibold text-white tracking-tight leading-none num-tab transition-all duration-500">
-            {budget.toFixed(4)}
+            {remaining.toFixed(4)}
           </span>
           <span className="font-mono text-[12px] text-zinc-400 leading-none">USDC</span>
         </div>
@@ -354,20 +357,22 @@ function LeftPanel({
 
 /* ── Center panel ─────────────────────────────────────────── */
 function CenterPanel({
-  run,
+  onRun,
   phase,
   lines,
   running,
+  disabled,
 }: {
-  run: (task: string) => void
+  onRun: (task: string) => void
   phase: Parameters<typeof AgentTrace>[0]['phase']
   lines: Parameters<typeof AgentTrace>[0]['lines']
   running: boolean
+  disabled: boolean
 }) {
   const [task, setTask] = useState<string>(SAMPLE_TASKS[0])
   const submit = () => {
-    if (!task.trim() || running) return
-    run(task.trim())
+    if (!task.trim() || running || disabled) return
+    onRun(task.trim())
   }
 
   return (
@@ -398,10 +403,10 @@ function CenterPanel({
           </div>
           <button
             onClick={submit}
-            disabled={running || !task.trim()}
+            disabled={running || !task.trim() || disabled}
             className={cn(
               'h-12 px-5 rounded-xl font-medium text-[13.5px] inline-flex items-center gap-2 transition-all active:scale-[0.99]',
-              running || !task.trim()
+              running || !task.trim() || disabled
                 ? 'bg-zinc-900 border border-zinc-800 text-zinc-600 cursor-not-allowed'
                 : 'bg-violet-600 hover:bg-violet-500 text-white shadow-[0_0_0_1px_rgba(255,255,255,0.06)_inset,0_10px_30px_-12px_rgba(139,92,246,0.6)]',
             )}
@@ -454,7 +459,16 @@ function CenterPanel({
 }
 
 /* ── Right panel — Execution log ──────────────────────────── */
-type Execution = { hash: string; task: string; at: number }
+type Execution = {
+  hash: string
+  task: string
+  at: number
+  capability: string
+  provider: string
+  rejected: { id: string; name: string; costDeltaPct: number }[]
+  costUsdc: number
+  savedUsdc: number
+}
 
 function ExecutionCard({
   exec,
@@ -464,6 +478,8 @@ function ExecutionCard({
   onOpenTx: (hash: string) => void
 }) {
   const taskShort = exec.task.length > 36 ? exec.task.slice(0, 34) + '…' : exec.task
+  const valueRej = exec.rejected.find((r) => r.costDeltaPct > 0)
+  const isPending = exec.hash.startsWith('pending-')
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 mb-2 screen-in">
       <div className="flex items-center justify-between gap-2 mb-2.5">
@@ -475,33 +491,50 @@ function ExecutionCard({
       <div className="space-y-1 font-mono text-[11px]">
         <div className="flex justify-between gap-3">
           <span className="text-zinc-600 shrink-0">capability</span>
-          <span className="text-zinc-300 truncate text-right">WEB SEARCH</span>
+          <span className="text-zinc-300 truncate text-right">{exec.capability}</span>
         </div>
         <div className="flex justify-between gap-3">
           <span className="text-zinc-600 shrink-0">provider</span>
-          <span className="text-zinc-300 truncate text-right">tavily-standard</span>
+          <span className="text-zinc-300 truncate text-right">{exec.provider}</span>
         </div>
         <div className="flex justify-between gap-3">
           <span className="text-zinc-600 shrink-0">decision</span>
           <span className="text-zinc-300 truncate text-right">cheapest-eligible</span>
         </div>
-        <div className="flex justify-between gap-3">
-          <span className="text-zinc-600 shrink-0">rejected</span>
-          <span className="text-red-400/80 truncate text-right">
-            serpapi-premium <span className="text-red-400/60">(+650%)</span>
-          </span>
-        </div>
+        {valueRej && (
+          <div className="flex justify-between gap-3">
+            <span className="text-zinc-600 shrink-0">rejected</span>
+            <span className="text-red-400/80 truncate text-right">
+              {valueRej.name}{' '}
+              <span className="text-red-400/60">(+{valueRej.costDeltaPct}%)</span>
+            </span>
+          </div>
+        )}
         <div className="flex justify-between gap-3">
           <span className="text-zinc-600 shrink-0">cost</span>
-          <span className="text-zinc-300 num-tab text-right">0.002 USDC</span>
+          <span className="text-zinc-300 num-tab text-right">{exec.costUsdc.toFixed(3)} USDC</span>
         </div>
+        {exec.savedUsdc > 0 && (
+          <div className="flex justify-between gap-3">
+            <span className="text-zinc-600 shrink-0">saved</span>
+            <span className="text-emerald-400 num-tab text-right">
+              {exec.savedUsdc.toFixed(3)} USDC
+            </span>
+          </div>
+        )}
         <div className="flex justify-between items-center gap-3">
           <span className="text-zinc-600 shrink-0">tx</span>
           <button
             onClick={() => onOpenTx(exec.hash)}
-            className="text-violet-400 hover:text-violet-300 inline-flex items-center gap-1 transition shrink-0"
+            className={cn(
+              'inline-flex items-center gap-1 transition shrink-0',
+              isPending
+                ? 'text-amber-400/80 hover:text-amber-300'
+                : 'text-violet-400 hover:text-violet-300',
+            )}
           >
-            {truncAddr(exec.hash, 4, 4)} <ExternalLink size={10} strokeWidth={1.75} />
+            {isPending ? 'pending settlement' : truncAddr(exec.hash, 4, 4)}{' '}
+            <ExternalLink size={10} strokeWidth={1.75} />
           </button>
         </div>
       </div>
@@ -517,8 +550,8 @@ function RightPanel({
   onOpenTx: (hash: string) => void
 }) {
   const tasksRun = executions.length
-  const providersRejected = executions.length
-  const usdcSaved = parseFloat((executions.length * 0.013).toFixed(3))
+  const providersRejected = executions.reduce((sum, e) => sum + e.rejected.length, 0)
+  const usdcSaved = executions.reduce((sum, e) => sum + e.savedUsdc, 0)
 
   return (
     <aside className="w-[300px] shrink-0 border-l border-zinc-800 bg-zinc-950 flex flex-col overflow-hidden">
@@ -589,15 +622,22 @@ function RightPanel({
 }
 
 /* ── Solscan modal ────────────────────────────────────────── */
-function SolscanModal({ tx, onClose }: { tx: string | null; onClose: () => void }) {
+function SolscanModal({
+  exec,
+  onClose,
+}: {
+  exec: Execution | null
+  onClose: () => void
+}) {
   useEffect(() => {
-    if (!tx) return
+    if (!exec) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [tx, onClose])
+  }, [exec, onClose])
 
-  if (!tx) return null
+  if (!exec) return null
+  const isPending = exec.hash.startsWith('pending-')
 
   return (
     <div
@@ -630,22 +670,42 @@ function SolscanModal({ tx, onClose }: { tx: string | null; onClose: () => void 
             <div className="text-zinc-500 text-[10px] uppercase tracking-[0.14em] mb-1">
               Signature
             </div>
-            <div className="text-violet-400 break-all leading-snug">{tx}</div>
+            <div className={cn(
+              'break-all leading-snug',
+              isPending ? 'text-amber-400' : 'text-violet-400',
+            )}>
+              {exec.hash}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
               <div className="text-zinc-500 text-[10px] uppercase tracking-[0.12em]">Status</div>
-              <div className="text-emerald-400 mt-1">✓ Success</div>
+              <div className={cn('mt-1', isPending ? 'text-amber-400' : 'text-emerald-400')}>
+                {isPending ? '◐ pending settlement' : '✓ Confirmed'}
+              </div>
             </div>
             <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
               <div className="text-zinc-500 text-[10px] uppercase tracking-[0.12em]">Amount</div>
-              <div className="text-white mt-1 num-tab">0.002 USDC</div>
+              <div className="text-white mt-1 num-tab">{exec.costUsdc.toFixed(3)} USDC</div>
             </div>
           </div>
-          <div className="text-[10px] text-zinc-600 text-center pt-2">
-            mock view — production would link to{' '}
-            <span className="text-zinc-400">solscan.io/tx/…?cluster=devnet</span>
-          </div>
+          {isPending ? (
+            <div className="text-[10.5px] text-amber-400/70 text-center pt-2 leading-relaxed">
+              x402 onchain settlement is pending CDP credentials. The agent ran the cost/value
+              decision and called the live provider, but no Solana transaction was signed yet.
+            </div>
+          ) : (
+            <div className="text-[10px] text-zinc-600 text-center pt-2">
+              <a
+                href={`https://solscan.io/tx/${exec.hash}?cluster=devnet`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-zinc-400 hover:text-white underline underline-offset-2"
+              >
+                View on solscan.io →
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -656,36 +716,56 @@ function SolscanModal({ tx, onClose }: { tx: string | null; onClose: () => void 
 export default function DashboardPage() {
   const router = useRouter()
   const { wallet, initialBudget, setWallet } = usePayableSession()
-  const [budget, setBudget] = useState(initialBudget)
+  const { balance, isLoading: balanceLoading } = useAgentBalance()
   const [executions, setExecutions] = useState<Execution[]>([])
-  const [openTx, setOpenTx] = useState<string | null>(null)
+  const [openExec, setOpenExec] = useState<Execution | null>(null)
   const [decisionMap, setDecisionMap] = useState<DecisionMap>({})
+  const [errorBanner, setErrorBanner] = useState<string | null>(null)
 
-  const budgetRef = useRef(initialBudget)
-  useEffect(() => { budgetRef.current = budget }, [budget])
+  const spent = useMemo(
+    () => executions.reduce((sum, e) => sum + e.costUsdc, 0),
+    [executions],
+  )
+  const remaining = Math.max(0, +(initialBudget - spent).toFixed(4))
 
   const { phase, lines, running, run } = useAgentRun({
-    getRemaining: () => budgetRef.current,
-    onTxConfirmed: ({ hash, task }) => {
-      setBudget((b) => Math.max(0, +(b - 0.002).toFixed(4)))
-      setExecutions((prev) => [{ hash, task, at: Date.now() }, ...prev])
+    onComplete: ({ response, task }) => {
+      setExecutions((prev) => [
+        {
+          hash: response.txHash,
+          task,
+          at: Date.now(),
+          capability: response.selectedCapability,
+          provider: response.selectedProvider.name,
+          rejected: response.rejectedProviders.map((r) => ({
+            id: r.id,
+            name: r.name,
+            costDeltaPct: r.costDeltaPct,
+          })),
+          costUsdc: response.costUsdc,
+          savedUsdc: response.savedUsdc,
+        },
+        ...prev,
+      ])
+    },
+    onError: ({ message }) => {
+      setErrorBanner(message)
+      setTimeout(() => setErrorBanner(null), 6000)
     },
   })
 
-  // Drive decision map from trace lines
+  // Drive decision map from streaming lines (real providerIds)
   useEffect(() => {
-    const hasReject = lines.some((l) => l.type === 'reject')
-    const hasDecision = lines.some((l) => l.type === 'decision')
-    if (!hasReject && !hasDecision) {
-      setDecisionMap({})
-      return
+    const map: DecisionMap = {}
+    for (const l of lines) {
+      if (!l.providerId) continue
+      if (l.type === 'decision') map[l.providerId] = 'selected'
+      else if (l.type === 'reject') map[l.providerId] = 'rejected'
     }
-    setDecisionMap({
-      'tavily-standard': hasDecision ? 'selected' : undefined,
-      'serpapi-premium': hasReject ? 'rejected' : undefined,
-    })
+    setDecisionMap(map)
   }, [lines])
 
+  // Redirect to /connect if no wallet
   useEffect(() => {
     if (!wallet) {
       navigateWithTransition(router, '/connect', 'nav-back')
@@ -696,6 +776,12 @@ export default function DashboardPage() {
   const onDisconnect = () => {
     setWallet(null)
     navigateWithTransition(router, '/connect', 'nav-back')
+  }
+
+  const handleRun = (task: string) => {
+    if (!wallet) return
+    setErrorBanner(null)
+    run({ task, budget: remaining > 0 ? remaining : initialBudget, walletAddress: wallet })
   }
 
   return (
@@ -710,16 +796,35 @@ export default function DashboardPage() {
       >
         <TopNav
           wallet={wallet}
-          balance={budget}
+          balance={balance}
+          balanceLoading={balanceLoading}
           onDisconnect={onDisconnect}
           onLogo={onLogo}
         />
+        {errorBanner && (
+          <div className="px-5 py-2 bg-red-500/10 border-b border-red-500/30 text-red-300 text-[12px] font-mono">
+            agent error · {errorBanner}
+          </div>
+        )}
         <div className="flex-1 flex overflow-hidden">
-          <LeftPanel budget={budget} initialBudget={initialBudget} decisionMap={decisionMap} />
-          <CenterPanel run={run} phase={phase} lines={lines} running={running} />
-          <RightPanel executions={executions} onOpenTx={(h) => setOpenTx(h)} />
+          <LeftPanel
+            remaining={remaining}
+            initialBudget={initialBudget}
+            decisionMap={decisionMap}
+          />
+          <CenterPanel
+            onRun={handleRun}
+            phase={phase}
+            lines={lines}
+            running={running}
+            disabled={!wallet}
+          />
+          <RightPanel executions={executions} onOpenTx={(h) => {
+            const e = executions.find((x) => x.hash === h) ?? null
+            setOpenExec(e)
+          }} />
         </div>
-        <SolscanModal tx={openTx} onClose={() => setOpenTx(null)} />
+        <SolscanModal exec={openExec} onClose={() => setOpenExec(null)} />
       </div>
     </ViewTransition>
   )

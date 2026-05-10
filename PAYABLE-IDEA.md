@@ -2,6 +2,8 @@
 
 > Economic Infrastructure for Autonomous AI Agents
 
+*Última actualización: Mayo 2026 — Hackathon Solana*
+
 ---
 
 ## 1. La Idea Central
@@ -20,135 +22,265 @@ Esto crea un mundo donde los agentes de IA **pueden usar herramientas**, pero so
 
 ### La solución
 
-Payable.ai introduce **"payable APIs"**: endpoints machine-native que los agentes pueden descubrir, evaluar y pagar en tiempo real — sin intervención humana.
+Payable.ai introduce un **Compute Market**: un mercado de capacidades computacionales donde los agentes pueden descubrir, evaluar y adquirir capabilities en tiempo real — sin intervención humana.
+
+El agente no elige APIs. El agente **compra capacidades computacionales**:
+
+- Web Search
+- OCR
+- GPU Inference
+- Financial Market Data
+- Satellite Imaging
+- Translation
+- Scraping
+
+Cada capability tiene múltiples providers compitiendo en precio, latencia y calidad.
 
 ### El diferenciador clave
 
-El diferenciador **NO** es el pago en sí.
+El diferenciador **NO** es el pago en sí.  
+El diferenciador **NO** es Solana.  
+El diferenciador **NO** es x402.
 
 El diferenciador es:
 
 > **Economic decision-making para agentes autónomos.**
 
-En vez de consumir herramientas a ciegas a través de API keys hardcodeadas, los agentes pueden:
+En vez de consumir herramientas a ciegas, los agentes:
 
-- comparar precios entre APIs
-- evaluar el budget restante
-- razonar sobre costo vs valor
-- decidir si una request vale lo que cuesta
+- consultan el compute market
+- comparan providers por precio, latencia y confianza
+- evalúan costo vs valor para la tarea específica
+- rechazan providers económicamente irracionales
+- seleccionan el óptimo dentro del budget
+- pagan y ejecutan — sin humanos en el loop
+
+### El momento más memorable del demo
+
+```
+Δ cost: +0.013 USDC for +8% confidence gain
+Task value threshold: 0.005 USDC
+Premium provider cost delta exceeds task value threshold
+serpapi-premium → REJECTED
+
+→ OPTIMAL: tavily-standard @ 0.002 USDC
+```
+
+Ese es el producto. No el pago — la **decisión**.
 
 ---
 
-## 2. Ejemplo de Demo Flow
+## 2. Posicionamiento
+
+### Lo que NO es
 
 ```
-Budget inicial del agente: 0.01 USDC
+❌ "Stripe for AI agents"
+❌ Crypto payment infrastructure
+❌ x402 demo genérico
+❌ API gateway con billing
+```
 
-APIs disponibles para search:
-  API A → 0.002 USDC/request
-  API B → 0.015 USDC/request
+### Lo que ES
 
-Razonamiento del agente:
-  "API B excede el budget restante.
-   API A es suficiente para esta tarea.
-   Selecciono API A."
+```
+✅ Economic infrastructure for autonomous agents
+✅ Compute market for AI capabilities
+✅ Observability layer for agent economic decisions
+✅ The reasoning layer that makes agents financially intelligent
+```
 
-Flujo de ejecución:
-  1. Agente selecciona API A (0.002 USDC)
-  2. Servidor responde → 402 Payment Required
-  3. Agente paga automáticamente en Solana USDC
-  4. Servidor verifica la transacción onchain
-  5. Request real a Tavily Search se ejecuta
-  6. Resultados reales retornan al agente
-  7. Tarea completada
+### One-Line Pitch
 
-Dashboard muestra:
-  - TX hash verificable en Solana Devnet
-  - API seleccionada y razonamiento
-  - Balance restante actualizado
-  - Respuesta de la API
+> "Payable.ai enables autonomous AI agents to operate inside computational markets — discovering, evaluating, and acquiring capabilities through economic reasoning and programmable micropayments on Solana."
+
+### Narrativa central
+
+AI agents can already reason about text, tools and workflows.  
+**Payable.ai enables them to reason about economics.**
+
+---
+
+## 3. Ejemplo de Demo Flow
+
+```
+Task: "Research Cursor's biggest competitors in the AI IDE space"
+Budget: 0.010 USDC
+
+COMPUTE MARKET — WEB SEARCH capability
+  tavily-standard    0.002 USDC    conf: 0.82    lat: 380ms    ● live
+  serpapi-premium    0.015 USDC    conf: 0.89    lat: 210ms    ○ mocked
+
+AGENT REASONING ENGINE:
+  Querying compute market...
+  Found: WEB SEARCH — 2 providers available
+
+  Evaluating cost/value tradeoffs...
+  Δ cost: +0.013 USDC for +8% confidence gain
+  Task value threshold: 0.005 USDC
+  Premium provider cost delta exceeds task value threshold
+  serpapi-premium → REJECTED
+
+  → OPTIMAL: tavily-standard @ 0.002 USDC
+
+Acquiring capability via x402...
+  GET /capabilities/web-search/tavily-standard
+  ← 402 · payment required · 0.002 USDC
+  Settling on solana:devnet...
+  ✓ Settled — capability acquired
+
+Executing web search...
+  ← 200 OK · 4 results
+
+Task complete · 0.002 USDC spent · budget remaining: 0.008 USDC
+```
+
+**Execution Log muestra:**
+```
+capability    WEB SEARCH
+selected      tavily-standard · 0.002 USDC
+rejected      serpapi-premium
+              +650% cost · exceeds value threshold
+saved         0.013 USDC vs premium
+tx            4xR7K...9pNq ↗ Solscan
 ```
 
 ---
 
-## 3. Por qué Solana
+## 4. El Producto — Qué es y qué no es
 
-Solana no es cosmética en este proyecto — es funcional para el modelo:
+### El SDK/API es el core del producto
 
-| Necesidad | Solana lo resuelve |
+El cliente real es el **developer que construye agentes de IA**.
+En producción, el agente corre en el backend del developer — autónomamente,
+sin UI, sin intervención humana:
+
+```typescript
+import { createPayableAgent } from '@payable-ai/sdk'
+
+const agent = createPayableAgent({
+  wallet: keypair,
+  budget: 0.01,
+  network: 'solana:devnet',
+})
+
+const result = await agent.run('Research Cursor competitors')
+// → internamente: discover → reason → pay via x402 → return results
+```
+
+### La UI es monitoring + onboarding
+
+La pantalla principal del producto es una **API Reference interactiva** —
+como Stripe Docs meets FastAPI Swagger. Muestra:
+
+- Documentación de los endpoints públicos (`/discover`, `/search`, `/agent`)
+- Un "Try it out" que ejecuta el flujo real end-to-end
+- El Reasoning Engine con el trace en vivo
+- El Execution Log con el historial de decisiones del agente
+
+**No es** un dashboard donde usuarios ejecutan tareas manualmente.
+**Es** una herramienta de developer que muestra cómo integrar el SDK
+y qué hace el agente internamente.
+
+### El Compute Market
+
+El mercado de capacidades disponibles para los agentes:
+
+| Capability | Providers | Status en demo |
+|---|---|---|
+| WEB SEARCH | tavily-standard (0.002), serpapi-premium (0.015) | ● live (Tavily real) |
+| OCR | textract-basic (0.001), vision-pro (0.008) | ○ mocked |
+| GPU INFERENCE | runpod-a100 (0.050), lambda-h100 (0.120) | ○ mocked |
+| FINANCIAL DATA | polygon-basic (0.003), bloomberg-rt (0.040) | ○ mocked |
+| SATELLITE IMAGING | planet-standard (0.020), maxar-hd (0.080) | ○ mocked |
+
+Solo WEB SEARCH tiene un provider real (Tavily). El resto es mocked pero
+conceptualmente coherente — hace que el pricing decisions del agente
+se sientan económicamente significativas.
+
+---
+
+## 5. Por qué Solana
+
+Solana no es cosmética en este proyecto — es funcional:
+
+| Necesidad del producto | Solana lo resuelve |
 |---|---|
 | Micropagos reales | Fees de ~$0.00025 por transacción |
 | Finalidad instantánea | ~400ms de settlement |
-| Wallets programáticas | Agentes firman transacciones sin humanos |
-| Stablecoins | USDC nativo en Solana (SPL token) |
-| Machine-to-machine | Transacciones sin cuentas ni onboarding |
+| Wallets programáticas | Agentes firman transacciones autónomamente |
+| Stablecoins nativas | USDC como SPL token en Solana |
+| Machine-to-machine | Transacciones sin cuentas ni onboarding humano |
 
-Sistemas como Stripe están optimizados para subscriptions, invoices y billing mensual. Payable.ai requiere **comercio programático en tiempo real entre agentes y APIs**.
+### Lo que pasa onchain
+
+Cuando el agente paga una capability, se ejecuta una transacción Solana
+real verificable públicamente:
+
+```
+Network:    Solana Devnet
+Token:      USDC (SPL)
+Amount:     0.002
+From:       agent wallet
+To:         gateway wallet
+Status:     confirmed ✓
+TX Hash:    4xR7KMpQ...9pNq  [visible en Solscan]
+```
+
+Eso no es simulado. Es una transacción real en la blockchain de Solana.
 
 ---
 
-## 4. Protocolo Base: x402
+## 6. Protocolo Base: x402
 
-### ¿Qué es x402?
+x402 es un protocolo de pagos abierto que revive el código HTTP 402
+("Payment Required"). Lanzado en mayo de 2025 por Coinbase.
 
-x402 es un protocolo de pagos abierto que revive el código HTTP 402 ("Payment Required"). Fue lanzado en mayo de 2025 por Coinbase/Cloudflare y ya procesó +100M de transacciones.
-
-Payable.ai **se construye sobre x402** en vez de reinventar el protocolo de pagos. Esto es una decisión estratégica para el hackathon: en 24-48h no se puede construir infraestructura de pagos from scratch.
-
-### Flujo x402
+### El flujo x402
 
 ```
-1. Cliente hace GET /search
-2. Servidor responde → HTTP 402 + {amount: 0.002, currency: USDC, wallet: "abc..."}
-3. Cliente construye transacción Solana con el pago
-4. Cliente reintenta GET /search con la firma de pago en el header
-5. Facilitador verifica la transacción onchain
-6. Si es válida → Servidor ejecuta el request y retorna 200 OK
+1. Agente hace GET /capabilities/web-search/tavily-standard
+2. Servidor responde → HTTP 402
+   { amount: 0.002, currency: USDC, recipient: "gateway...", network: "solana:devnet" }
+3. Agente construye y firma transacción Solana
+4. Agente reintenta el GET con proof de pago en el header
+5. CDP Facilitator verifica la transacción onchain
+6. Si válida → Servidor ejecuta Tavily y retorna 200 OK
 ```
 
-### SDKs disponibles
+### Por qué x402 (y no inventar el protocolo)
 
-```bash
-npm install @x402/svm       # Solana Virtual Machine (core)
-npm install @x402/next      # Middleware para Next.js (servidor)
-npm install @x402/fetch     # Cliente que paga automáticamente
-```
-
-### Facilitador gratuito
-
-Coinbase Developer Platform ofrece un facilitador hosteado con **1.000 transacciones/mes gratis**. No hay que levantar infraestructura blockchain propia.
+En 24-48h de hackathon no se puede construir infraestructura de pagos
+from scratch. x402 ya existe, ya tiene SDKs, ya tiene un facilitador
+gratuito. Se usa como base y se construye el **reasoning layer** encima.
+Eso es lo que diferencia Payable.ai — no el protocolo de pagos.
 
 ---
 
-## 5. Modelo de Negocio
+## 7. Agent Policies
 
-### Posicionamiento
-
-> "The payment layer for autonomous API consumption."
-
-No es "Stripe for AI agents" — es **infrastructure for machine-native API markets**.
-
-### Gateway / Marketplace Model
-
-Payable.ai actúa como:
-
-- Gateway de APIs payables
-- Capa de pagos machine-to-machine
-- Marketplace de APIs para agentes autónomos
-
-### Flujo para providers
+Los agentes operan bajo reglas económicas programables:
 
 ```
-Provider configura:
-  endpoint: /search/tavily
-  precio: 0.002 USDC/request
-  rate limits: 100 req/min
-
-Payable.ai expone:
-  payable.ai/search/tavily → endpoint payable listo para agentes
+AGENT POLICY
+─────────────────────────────
+strategy        cheapest-eligible
+max/request     0.005 USDC
+max/task        budget disponible
 ```
 
-### Revenue model
+Estas policies determinan cómo el agente evalúa el compute market:
+- `cheapest-eligible`: selecciona el provider más barato que cumpla los requerimientos
+- `max/request`: nunca paga más de X USDC por un solo request
+- El agente rechaza automáticamente cualquier provider que exceda estos límites
+
+---
+
+## 8. Modelo de Negocio
+
+### Revenue Model
+
+Payable.ai actúa como gateway entre agents y providers, cobrando un fee:
 
 ```
 Provider price:      0.0020 USDC
@@ -156,47 +288,38 @@ Payable.ai price:    0.0025 USDC
 Platform fee:        0.0005 USDC  (20% margin)
 ```
 
-A escala con high-frequency machine commerce, el volumen de transacciones genera revenue significativo.
+A escala con high-frequency machine commerce (agentes haciendo miles
+de requests por hora), el volumen genera revenue significativo.
 
 ### Monetización adicional (largo plazo)
 
+- SDK como producto principal (`@payable-ai/sdk`)
 - Hosted wallets para agentes
-- Analytics de consumo por agente
-- Enterprise tooling y dashboards
-- Budget management programático
-- Provider dashboards con métricas
+- Analytics de decisiones económicas por agente
+- Enterprise tooling con budget management programático
+- Provider dashboards con métricas de adopción
+
+### Potenciales Moats
+
+**1. Network effects de providers**
+Más capabilities disponibles → plataforma más útil para agentes →
+más agentes → más providers quieren estar.
+
+**2. Estandarización**
+Payable.ai puede evolucionar como estándar de consumo de capabilities
+para agentes, análogo a cómo OAuth estandarizó la autenticación.
+
+**3. Integraciones con frameworks de agentes**
+Integración nativa con LangChain, OpenAI Agents SDK, Claude tools (MCP),
+CrewAI, AutoGPT.
+
+**4. Economic Orchestration Layer**
+La capa más defensible: budget reasoning, provider routing inteligente,
+price comparison, autonomous economic decision-making.
 
 ---
 
-## 6. Potenciales Moats
-
-### 1. Network effects de providers
-
-Más APIs disponibles → plataforma más útil para agentes → más agentes → más providers quieren estar.
-
-### 2. Estandarización
-
-Payable.ai puede evolucionar como estándar de consumo de APIs para agentes, análogo a cómo OAuth estandarizó la autenticación.
-
-### 3. Integraciones con frameworks de agentes
-
-Integración nativa con:
-- LangChain
-- OpenAI Agents SDK
-- Claude tools (MCP)
-- Eliza, CrewAI, AutoGPT
-
-### 4. Economic Orchestration Layer
-
-La capa más defensible a largo plazo:
-- Budget reasoning
-- Provider routing inteligente
-- Price comparison en tiempo real
-- Autonomous economic decision-making
-
----
-
-## 7. Stack Tecnológico
+## 9. Stack Tecnológico
 
 ### Frontend
 
@@ -204,18 +327,19 @@ La capa más defensible a largo plazo:
 |---|---|
 | **Next.js 14** (App Router) | Framework principal — frontend + backend en un repo |
 | **TypeScript** | Tipado estricto para los SDKs de Solana/x402 |
-| **Tailwind CSS** | Estilos rápidos |
-| **shadcn/ui** | Componentes de UI listos |
-| **Recharts** | Gráficos de balance y transacciones |
+| **Tailwind CSS** | Estilos |
+| **shadcn/ui** | Componentes de UI |
+| **Geist Sans + Geist Mono** | Tipografía (Google Fonts) |
+| **Motion (framer-motion)** | Animaciones y micro-interacciones |
 | **@solana/wallet-adapter-react** | Conexión con Phantom Wallet |
 
-### Backend (dentro de Next.js API Routes)
+### Backend (API Routes dentro de Next.js)
 
 | Tecnología | Rol |
 |---|---|
-| **Next.js API Routes** | Endpoints del gateway — sin servidor separado |
-| **@x402/next** | Middleware de pagos para los endpoints payables |
-| **@x402/fetch** | Cliente del agente para pagar automáticamente |
+| **Next.js API Routes** | Endpoints del gateway |
+| **@x402/next** | Middleware de pagos para endpoints protegidos |
+| **@x402/fetch** | Cliente del agente con pago automático |
 | **Vercel AI SDK** | Lógica del agente (streamText + tool calls) |
 | **Tavily API** | La única API real integrada para el demo |
 
@@ -225,148 +349,246 @@ La capa más defensible a largo plazo:
 |---|---|
 | **@solana/web3.js** | Interacción con la blockchain desde JS |
 | **@x402/svm** | Implementación x402 para Solana |
-| **Solana Devnet** | Red de prueba gratuita (dinero ficticio) |
+| **Solana Devnet** | Red de prueba (dinero ficticio, misma tecnología que mainnet) |
 | **Phantom Wallet** | Wallet del usuario en el browser |
 | **Helius** | RPC endpoint confiable (tier gratuito) |
 | **CDP Facilitator** | Verificación y settlement de transacciones x402 |
-| **USDC Devnet** | Stablecoin de prueba para los micropagos |
+| **USDC Devnet** | USDC como SPL token en Solana Devnet |
 
 ---
 
-## 8. Arquitectura del MVP
+## 10. Arquitectura del MVP
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                      BROWSER                             │
-│                                                          │
+│                    BROWSER                               │
 │   Phantom Wallet ←→ Next.js Frontend (React)            │
 │                                                          │
-│   Input: "Research Cursor competitors"                   │
-│   Output: Dashboard con TX, reasoning, resultados       │
+│   API Reference page con "Try it out":                  │
+│   Input: task + budget                                   │
+│   Output: Reasoning trace + TX hash + resultados        │
 └────────────────────────┬─────────────────────────────────┘
                          │ HTTP
 ┌────────────────────────▼─────────────────────────────────┐
 │                NEXT.JS API ROUTES                        │
 │                                                          │
-│  /api/discover                                           │
-│    → Lista las APIs payables disponibles                 │
-│    → Retorna: nombre, precio, descripción                │
+│  GET  /api/discover                                      │
+│    → Retorna el Compute Market completo                  │
+│    → { capabilities: [{ id, name, providers: [...] }] } │
 │                                                          │
-│  /api/agent                                              │
-│    → Recibe: task + budget                               │
-│    → Vercel AI SDK ejecuta el agente                     │
-│    → Agente evalúa APIs disponibles                      │
-│    → Selecciona la más barata dentro del budget          │
-│    → @x402/fetch intenta el request                      │
-│    → Recibe 402 → paga → reintenta                       │
+│  POST /api/agent                                         │
+│    → Recibe: { task, budget, walletAddress }             │
+│    → Vercel AI SDK ejecuta el reasoning engine           │
+│    → Agente evalúa capabilities y providers              │
+│    → Selecciona el óptimo dentro del budget              │
+│    → @x402/fetch paga automáticamente                    │
+│    → Retorna: reasoning[], selectedProvider,             │
+│               rejectedProviders[], savedUsdc, results[]  │
 │                                                          │
-│  /api/search (protegido con @x402/next)                  │
+│  GET  /api/search (protegido con @x402/next)             │
 │    → Requiere pago de 0.002 USDC                         │
-│    → Si pago válido → ejecuta Tavily Search              │
-│    → Retorna resultados reales                           │
+│    → Sin pago → HTTP 402 + payment requirements          │
+│    → Con pago válido → ejecuta Tavily → retorna 200      │
 └────────────────────────┬─────────────────────────────────┘
                          │ x402 verify + settle
 ┌────────────────────────▼─────────────────────────────────┐
 │          SOLANA DEVNET + CDP FACILITATOR                 │
 │                                                          │
-│  - Transacción verificada onchain                        │
-│  - TX Hash público (visible en Solscan)                  │
-│  - Settlement en USDC                                    │
+│  Transacción USDC-SPL verificada onchain                 │
+│  TX Hash público visible en Solscan Devnet               │
 └──────────────────────────────────────────────────────────┘
+```
+
+### Tipos clave (packages/types/index.ts)
+
+```typescript
+// Compute Market
+interface Provider {
+  id: string
+  priceUsdc: number
+  latencyMs: number
+  confidence: number
+  live: boolean
+}
+
+interface Capability {
+  id: string
+  name: string
+  providers: Provider[]
+}
+
+// Agent Response
+interface AgentResponse {
+  txHash: string
+  selectedProvider: string
+  selectedCapability: string
+  cost: number
+  rejectedProviders: Array<{
+    id: string
+    reason: string
+    costDelta: number
+    costDeltaPct: number
+  }>
+  savedUsdc: number
+  reasoning: ReasoningLine[]
+  results: string[]
+}
+
+// Reasoning Trace
+type ReasoningLineType =
+  'sys' | 'found' | 'market' | 'provider' |
+  'eval' | 'reject' | 'decision' | 'http' |
+  'settled' | 'complete'
 ```
 
 ---
 
-## 9. Setup de Entorno — Paso a Paso
+## 11. Setup de Entorno
 
-### Cuentas y servicios a registrar (hacer ANTES de codear)
+### Dos wallets necesarias
 
-| Servicio | Para qué | URL | Tier |
-|---|---|---|---|
-| **Helius** | RPC endpoint Solana | helius.dev | Gratis |
-| **Coinbase CDP** | x402 Facilitator | cdp.coinbase.com | 1000 tx/mes gratis |
-| **Tavily** | API de search real | tavily.com | Gratis (hackathon) |
-| **Phantom** | Wallet browser | phantom.app | Gratis |
+```
+Phantom Wallet (usuario — frontend)
+  → Instalar: phantom.com/download (extensión Chrome)
+  → Cambiar red: Settings → Developer Settings → Devnet
+  → Fondear SOL: devnetfaucet.org (20 SOL gratis)
+  → Fondear USDC: faucet.circle.com → Solana Devnet
 
-### Variables de entorno necesarias
+Gateway Wallet (backend — recibe pagos x402)
+  → Generar con script Node.js en el proyecto:
 
-```env
-# Solana
-NEXT_PUBLIC_SOLANA_RPC_URL=https://devnet.helius-rpc.com/?api-key=TU_KEY
-NEXT_PUBLIC_SOLANA_NETWORK=devnet
+  node -e "
+    const { Keypair } = require('@solana/web3.js');
+    const bs58 = require('bs58');
+    const kp = Keypair.generate();
+    console.log('PUBLIC_KEY=' + kp.publicKey.toString());
+    console.log('PRIVATE_KEY=' + bs58.encode(kp.secretKey));
+  "
 
-# x402 / Coinbase CDP
-CDP_API_KEY_ID=tu_key_id
-CDP_API_KEY_SECRET=tu_key_secret
-
-# APIs externas
-TAVILY_API_KEY=tvly-xxx
-
-# Wallet del gateway (backend — recibe los pagos)
-GATEWAY_WALLET_PRIVATE_KEY=xxx  # Solo en devnet, nunca en producción
-GATEWAY_WALLET_PUBLIC_KEY=xxx
+  → Fondear USDC: faucet.circle.com con la PUBLIC_KEY generada
 ```
 
-### Setup de Phantom Wallet para Devnet
+### API Keys necesarias
 
-1. Instalar extensión en Chrome: `phantom.app`
-2. Crear nueva wallet → guardar las 12 palabras seed
-3. Ir a Settings → Developer Settings → activar Devnet
-4. Obtener SOL de prueba: `faucet.solana.com`
-5. Obtener USDC de prueba: `faucet.circle.com`
+| Servicio | Variable | URL | Prioridad |
+|---|---|---|---|
+| OpenAI | `OPENAI_API_KEY` | platform.openai.com | 🔴 Crítica |
+| Tavily | `TAVILY_API_KEY` | app.tavily.com | 🔴 Crítica |
+| Helius | `NEXT_PUBLIC_SOLANA_RPC_URL` | dev.helius.xyz | 🟡 Recomendada |
+| Coinbase CDP | `CDP_API_KEY_ID` + `CDP_API_KEY_SECRET` | portal.cdp.coinbase.com | 🟢 Para x402 real |
 
-### Lo que NO necesitás
+### .env.local completo
+
+```env
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Tavily
+TAVILY_API_KEY=tvly-...
+
+# Solana
+NEXT_PUBLIC_SOLANA_NETWORK=devnet
+NEXT_PUBLIC_SOLANA_RPC_URL=https://devnet.helius-rpc.com/?api-key=...
+
+# Gateway Wallet (backend — generado con el script)
+GATEWAY_WALLET_PUBLIC_KEY=...
+GATEWAY_WALLET_PRIVATE_KEY=...
+
+# Coinbase CDP (x402 facilitator)
+CDP_API_KEY_ID=...
+CDP_API_KEY_SECRET=...
+
+# App
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+### Orden de prioridad para conseguir las keys
+
+```
+Ahora (bloquean el agente):
+  □ OpenAI API key       → platform.openai.com
+  □ Tavily API key       → app.tavily.com
+  □ Phantom instalado    → phantom.com/download → cambiar a Devnet
+  □ Gateway wallet       → generar con el script de Node.js
+  □ Ambas wallets fondeadas con SOL y USDC Devnet
+
+Después (para activar pago real onchain):
+  □ Helius RPC key       → dev.helius.xyz
+  □ Coinbase CDP keys    → portal.cdp.coinbase.com
+```
+
+Con OpenAI + Tavily + wallets se puede correr el agente completo.
+CDP activa la verificación onchain real (el gate x402 está comentado
+en el código hasta tener estas keys).
+
+---
+
+## 12. TODOs de Código (post-keys)
+
+Tres archivos bloqueados que se desbloquean con las keys:
+
+```
+app/api/search/route.ts
+  → Activar el middleware x402 con CDP credentials
+
+lib/x402.ts
+  → Reemplazar fetch normal por wrapFetch de @x402/fetch
+  → Configurar con el gateway keypair
+
+lib/agent.ts
+  → Pasarle el x402Fetch con el keypair firmante
+  → Emitir reasoning lines con los nuevos tipos
+    (market, provider, eval, reject, decision)
+  → Calcular y retornar rejectedProviders y savedUsdc
+```
+
+---
+
+## 13. Lo que NO necesitás
 
 ```
 ❌ Escribir smart contracts en Rust
 ❌ Instalar Anchor framework
 ❌ Deployar programas a Solana
-❌ Manejar wallets de usuarios
 ❌ KYC ni compliance
-❌ Mainnet (todo en Devnet)
+❌ Mainnet (todo en Devnet para el hackathon)
+❌ phantom.app (URL vieja — usar phantom.com)
 ```
 
 ---
 
-## 10. Checklist Pre-Hackathon
+## 14. Deploy en Vercel
 
 ```
-□ Node.js 18+ instalado
-□ Cuenta en Helius → RPC URL de Devnet copiada
-□ Cuenta en Coinbase CDP → API keys copiadas
-□ Cuenta en Tavily → API key copiada
-□ Extensión Phantom instalada y en Devnet
-□ Devnet SOL airdropeado a wallet de prueba
-□ Devnet USDC en wallet de prueba
-□ Repositorio Next.js creado
-  npx create-next-app@latest payable-ai --typescript --tailwind --app
-□ SDKs instalados:
-  npm install @x402/svm @x402/next @x402/fetch
-  npm install @solana/web3.js @solana/wallet-adapter-react
-  npm install ai @ai-sdk/openai
-  npm install tavily-js
+1. Push del repo a GitHub
+2. Importar en vercel.com/new
+3. Root Directory: dejar vacío (vercel.json lo maneja)
+4. Agregar todas las variables de .env.local en el dashboard de Vercel
+   (marcar GATEWAY_WALLET_PRIVATE_KEY como "Sensitive")
+5. Click Deploy
 ```
+
+El `vercel.json` en el root del monorepo ya está configurado para
+apuntar a `apps/web` correctamente.
 
 ---
 
-## 11. Recursos Clave
+## 15. Recursos Clave
 
 | Recurso | URL |
 |---|---|
-| Guía oficial x402 en Solana | solana.com/developers/guides/getstarted/intro-to-x402 |
-| Docs x402 Coinbase | docs.cdp.coinbase.com/x402 |
-| Repositorio x402 (ejemplos) | github.com/coinbase/x402 |
+| x402 docs (Coinbase) | docs.cdp.coinbase.com/x402 |
+| x402 repositorio + ejemplos | github.com/coinbase/x402 |
 | Solana web3.js docs | solana-labs.github.io/solana-web3.js |
 | Wallet Adapter React | github.com/solana-labs/wallet-adapter |
 | Vercel AI SDK | sdk.vercel.ai/docs |
-| Solscan (explorador Devnet) | solscan.io/?cluster=devnet |
+| Solscan Devnet | solscan.io/?cluster=devnet |
+| Phantom | phantom.com/download |
+| SOL Devnet faucet | devnetfaucet.org |
+| USDC Devnet faucet | faucet.circle.com |
+| Helius RPC | dev.helius.xyz |
+| Coinbase CDP | portal.cdp.coinbase.com |
 
 ---
 
-## 12. One-Line Pitch
-
-> "Payable.ai enables autonomous AI agents to discover, evaluate and consume APIs through programmable micropayments on Solana."
-
----
-
-*Documento generado durante sesión de diseño de producto — Hackathon Solana 2026*
+*Documento actualizado — Mayo 2026*
