@@ -8,7 +8,6 @@ import {
   Compass,
   Cpu,
   ExternalLink,
-  Github,
   Receipt,
   Sparkles,
   X,
@@ -66,18 +65,7 @@ function LandingNav({ onLaunch }: { onLaunch: () => void }) {
 function Hero({ onLaunch }: { onLaunch: () => void }) {
   return (
     <section className="mesh-bg relative">
-      <div className="max-w-[1200px] mx-auto px-6 pt-24 pb-32 relative">
-        <div className="flex justify-center mb-8">
-          <div className="pop inline-flex items-center gap-2 h-7 px-3 rounded-full border border-zinc-800 bg-zinc-950/70 backdrop-blur">
-            <PulseDot tone="success" size={6} />
-            <span className="text-[11.5px] font-mono text-zinc-300 tracking-tight">
-              Built on x402 · Solana
-            </span>
-            <span className="text-zinc-700">·</span>
-            <span className="text-[11px] text-zinc-500">v0.1 hackathon preview</span>
-          </div>
-        </div>
-
+      <div className="max-w-[1200px] mx-auto px-6 pt-32 pb-32 relative">
         <h1 className="text-center font-display font-semibold text-white tracking-tightest leading-[0.95] text-[64px] md:text-[88px]">
           <span className="block">Economic reasoning</span>
           <span className="block italic font-light text-transparent bg-clip-text bg-gradient-to-r from-accent-soft via-accent to-accent-soft">
@@ -91,7 +79,7 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
           discover APIs, evaluate cost vs value, and settle in Solana USDC.
         </p>
 
-        <div className="mt-10 flex items-center justify-center gap-3">
+        <div className="mt-10 flex items-center justify-center">
           <PayableButton
             variant="primary"
             size="lg"
@@ -99,9 +87,6 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             trailing={<ArrowRight size={15} strokeWidth={1.75} />}
           >
             Launch App
-          </PayableButton>
-          <PayableButton variant="ghost" size="lg" trailing={<ExternalLink size={14} strokeWidth={1.75} />}>
-            View Docs
           </PayableButton>
         </div>
 
@@ -667,7 +652,7 @@ function CtaStrip({ onLaunch }: { onLaunch: () => void }) {
                 Connect a Devnet wallet, fund the agent with test USDC, and give it a task. You&apos;ll see the trace stream live.
               </p>
             </div>
-            <div className="flex md:justify-end gap-3">
+            <div className="flex md:justify-end">
               <PayableButton
                 variant="accent"
                 size="lg"
@@ -675,9 +660,6 @@ function CtaStrip({ onLaunch }: { onLaunch: () => void }) {
                 trailing={<ArrowRight size={15} strokeWidth={1.75} />}
               >
                 Launch App
-              </PayableButton>
-              <PayableButton variant="ghost" size="lg" leading={<Github size={14} strokeWidth={1.75} />}>
-                GitHub
               </PayableButton>
             </div>
           </div>
@@ -693,7 +675,7 @@ function Footer() {
       <div className="max-w-[1200px] mx-auto px-6 py-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <Logo />
         <div className="text-[12px] text-zinc-500 font-mono">
-          Powered by Solana · x402 Protocol · Built at Hackathon 2026
+          © 2026 Payable.ai · All rights reserved
         </div>
         <div className="flex items-center gap-4 text-[12px] text-zinc-500">
           <a href="#" className="hover:text-zinc-200 transition">Privacy</a>
