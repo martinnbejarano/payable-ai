@@ -19,6 +19,7 @@ export interface AgentTask {
   task: string
   budget: number
   walletAddress: string
+  imageUrl?: string
 }
 
 export type ReasoningLineType =
@@ -32,8 +33,15 @@ export type ReasoningLineType =
   | 'http'
   | 'settled'
   | 'complete'
+  | 'plan'
 
-export type AgentPhase = 'IDLE' | 'EVALUATING' | 'DECIDING' | 'ACQUIRING' | 'COMPLETE'
+export type AgentPhase =
+  | 'IDLE'
+  | 'PLANNING'
+  | 'EVALUATING'
+  | 'DECIDING'
+  | 'ACQUIRING'
+  | 'COMPLETE'
 
 export interface ReasoningLine {
   type: ReasoningLineType
@@ -44,6 +52,7 @@ export interface ReasoningLine {
   costDelta?: number
   costDeltaPct?: number
   providerId?: string
+  capabilityId?: string
   txHash?: string
 }
 
@@ -67,14 +76,37 @@ export interface SearchResult {
   snippet?: string
 }
 
-export interface AgentResponse {
+export interface OcrResult {
+  text: string
+  confidence: number
+}
+
+export type CapabilityOutput =
+  | { kind: 'search'; results: SearchResult[] }
+  | { kind: 'ocr'; text: string; confidence: number }
+
+export interface CapabilityStep {
+  capabilityId: string
+  capabilityLabel: string
   selectedProvider: Provider
-  selectedCapability: string
   rejectedProviders: RejectedProvider[]
+  costUsdc: number
   savedUsdc: number
   txHash: string
-  costUsdc: number
-  results: SearchResult[]
+  output?: CapabilityOutput
+}
+
+export interface PlanSummary {
+  capabilities: string[]
+  rationale: string
+}
+
+export interface AgentResponse {
+  task: string
+  steps: CapabilityStep[]
+  totalCostUsdc: number
+  totalSavedUsdc: number
+  plan: PlanSummary
 }
 
 export type AgentStreamEvent =

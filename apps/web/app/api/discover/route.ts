@@ -29,10 +29,10 @@ const CAPABILITIES: Capability[] = [
   {
     id: 'ocr',
     label: 'OCR',
-    live: false,
+    live: true,
     providers: [
-      { id: 'textract-basic', name: 'textract-basic', priceUsdc: 0.001, latencyMs: 200, live: false, network: 'solana:devnet' },
-      { id: 'vision-pro', name: 'vision-pro', priceUsdc: 0.008, latencyMs: 95, live: false, network: 'solana:devnet' },
+      { id: 'vision-flash', name: 'vision-flash', priceUsdc: 0.003, latencyMs: 240, live: true, endpoint: '/api/ocr', network: 'solana:devnet' },
+      { id: 'textract-premium', name: 'textract-premium', priceUsdc: 0.012, latencyMs: 95, live: false, network: 'solana:devnet' },
     ],
   },
   {

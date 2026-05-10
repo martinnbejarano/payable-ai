@@ -14,10 +14,11 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { task, budget, walletAddress } = body as {
+    const { task, budget, walletAddress, imageUrl } = body as {
       task: string
       budget: number
       walletAddress: string
+      imageUrl?: string
     }
 
     if (!task || typeof task !== 'string') {
@@ -38,8 +39,27 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    if (imageUrl !== undefined) {
+      if (typeof imageUrl !== 'string' || imageUrl.length === 0) {
+        return Response.json(
+          { error: 'Invalid field: imageUrl (must be a non-empty string)', code: 'INVALID_IMAGE_URL' },
+          { status: 400 }
+        )
+      }
+      const validImage =
+        imageUrl.startsWith('/') ||
+        imageUrl.startsWith('data:image/') ||
+        imageUrl.startsWith('http://') ||
+        imageUrl.startsWith('https://')
+      if (!validImage) {
+        return Response.json(
+          { error: 'imageUrl must be a /public path, data URL, or http(s) URL', code: 'INVALID_IMAGE_URL' },
+          { status: 400 }
+        )
+      }
+    }
 
-    return new Response(runAgent(task, budget, walletAddress), {
+    return new Response(runAgent(task, budget, walletAddress, imageUrl), {
       headers: {
         'Content-Type': 'application/x-ndjson; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',

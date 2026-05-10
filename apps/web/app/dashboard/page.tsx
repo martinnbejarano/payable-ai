@@ -1,14 +1,16 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
-import type { AgentResponse } from '@payable-ai/types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CapabilityStep, PlanSummary } from '@payable-ai/types'
 import { ViewTransition } from '@/components/payable/view-transition'
 import {
   Activity,
   Code as CodeIcon,
   ChevronRight,
   ExternalLink,
+  Image as ImageIcon,
+  Paperclip,
   Plus,
   Sparkles,
   X,
@@ -25,7 +27,7 @@ import { usePayableSession } from '@/components/payable/session'
 import { navigateWithTransition } from '@/components/payable/nav'
 import { useAgentBalance } from '@/hooks/useAgentBalance'
 
-/* ── Compute market data ──────────────────────────────────── */
+/* ── Compute market data (mirror of /api/discover) ────────── */
 const CAPABILITIES = [
   {
     id: 'web-search',
@@ -39,10 +41,10 @@ const CAPABILITIES = [
   {
     id: 'ocr',
     label: 'OCR',
-    live: false,
+    live: true,
     providers: [
-      { id: 'textract-basic', name: 'textract-basic', price: 0.001, latency: 200, live: false },
-      { id: 'vision-pro', name: 'vision-pro', price: 0.008, latency: 95, live: false },
+      { id: 'vision-flash', name: 'vision-flash', price: 0.003, latency: 240, live: true },
+      { id: 'textract-premium', name: 'textract-premium', price: 0.012, latency: 95, live: false },
     ],
   },
   {
@@ -76,12 +78,19 @@ const CAPABILITIES = [
 
 type DecisionMap = Record<string, 'selected' | 'rejected' | undefined>
 
-const SAMPLE_TASKS = [
-  "Research Cursor's biggest competitors in the AI IDE space",
-  'Analyze Q1 earnings reports for top 5 AI companies',
-  'Compare GPU inference pricing across cloud providers',
-  'Find recent breakthroughs in protein folding research',
-] as const
+type SampleTask = { label: string; imageUrl?: string }
+const SAMPLE_TASKS: SampleTask[] = [
+  {
+    label: 'Extract competitors from this product screenshot and research them',
+    imageUrl: '/sample-screenshot.png',
+  },
+  { label: "Research Cursor's biggest competitors in the AI IDE space" },
+  { label: 'Analyze Q1 earnings reports for top 5 AI companies' },
+  { label: 'Compare GPU inference pricing across cloud providers' },
+  { label: 'Find recent breakthroughs in protein folding research' },
+]
+
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
 /* ── Top nav ──────────────────────────────────────────────── */
 function TopNav({
@@ -273,6 +282,18 @@ function LeftPanel({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ 'web-search': true })
   const usedPct = Math.max(0, Math.min(100, ((initialBudget - remaining) / initialBudget) * 100))
 
+  // Auto-expand any capability whose providers became 'selected'/'rejected' during a run.
+  useEffect(() => {
+    const auto: Record<string, boolean> = {}
+    for (const cap of CAPABILITIES) {
+      const involved = cap.providers.some((p) => decisionMap[p.id] !== undefined)
+      if (involved) auto[cap.id] = true
+    }
+    if (Object.keys(auto).length > 0) {
+      setExpanded((prev) => ({ ...prev, ...auto }))
+    }
+  }, [decisionMap])
+
   const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
 
   return (
@@ -363,16 +384,55 @@ function CenterPanel({
   running,
   disabled,
 }: {
-  onRun: (task: string) => void
+  onRun: (task: string, imageUrl?: string) => void
   phase: Parameters<typeof AgentTrace>[0]['phase']
   lines: Parameters<typeof AgentTrace>[0]['lines']
   running: boolean
   disabled: boolean
 }) {
-  const [task, setTask] = useState<string>(SAMPLE_TASKS[0])
+  const [task, setTask] = useState<string>(SAMPLE_TASKS[0].label)
+  const [pendingImage, setPendingImage] = useState<string | null>(SAMPLE_TASKS[0].imageUrl ?? null)
+  const [imageError, setImageError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement | null>(null)
+
   const submit = () => {
     if (!task.trim() || running || disabled) return
-    onRun(task.trim())
+    onRun(task.trim(), pendingImage ?? undefined)
+  }
+
+  const onSampleClick = (s: SampleTask) => {
+    setTask(s.label)
+    setPendingImage(s.imageUrl ?? null)
+    setImageError(null)
+  }
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setImageError('Please select an image file.')
+      return
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImageError(`Image is too large (${(file.size / 1024 / 1024).toFixed(1)} MB · max 4 MB).`)
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : null
+      if (dataUrl) {
+        setPendingImage(dataUrl)
+        setImageError(null)
+      }
+    }
+    reader.onerror = () => setImageError('Failed to read image file.')
+    reader.readAsDataURL(file)
+  }
+
+  const clearImage = () => {
+    setPendingImage(null)
+    setImageError(null)
   }
 
   return (
@@ -394,11 +454,34 @@ function CenterPanel({
               <button
                 onClick={() => setTask('')}
                 className="ml-2 h-5 w-5 rounded text-zinc-600 hover:text-zinc-200 hover:bg-zinc-800 inline-flex items-center justify-center"
-                aria-label="clear"
+                aria-label="clear task"
               >
                 <X size={11} strokeWidth={1.75} />
               </button>
             )}
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={running}
+              className={cn(
+                'ml-1 h-7 w-7 rounded-md inline-flex items-center justify-center transition',
+                pendingImage
+                  ? 'text-violet-400 bg-violet-500/10'
+                  : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800',
+                running && 'cursor-not-allowed opacity-50',
+              )}
+              aria-label="Attach image"
+              title="Attach image"
+            >
+              <Paperclip size={13} strokeWidth={1.75} />
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              onChange={onFileChange}
+              className="hidden"
+              aria-hidden
+            />
             <span className="ml-1 text-[10px] font-mono text-zinc-600 hidden md:inline">↩</span>
           </div>
           <button
@@ -425,6 +508,41 @@ function CenterPanel({
           </button>
         </div>
 
+        {/* Image preview row */}
+        {(pendingImage || imageError) && !running && (
+          <div className="mt-2 flex items-center gap-2">
+            {pendingImage && (
+              <div className="inline-flex items-center gap-2 h-8 pl-1 pr-2 rounded-md border border-violet-500/30 bg-violet-500/5">
+                {pendingImage.startsWith('data:') ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={pendingImage}
+                    alt="attached"
+                    className="h-6 w-6 rounded object-cover"
+                  />
+                ) : (
+                  <span className="h-6 w-6 rounded bg-violet-500/20 inline-flex items-center justify-center text-violet-300">
+                    <ImageIcon size={11} strokeWidth={1.75} />
+                  </span>
+                )}
+                <span className="font-mono text-[10.5px] text-violet-300">
+                  {pendingImage.startsWith('data:') ? 'uploaded image' : pendingImage}
+                </span>
+                <button
+                  onClick={clearImage}
+                  className="ml-0.5 h-4 w-4 rounded text-violet-300/70 hover:text-violet-200 hover:bg-violet-500/20 inline-flex items-center justify-center"
+                  aria-label="Remove image"
+                >
+                  <X size={10} strokeWidth={1.75} />
+                </button>
+              </div>
+            )}
+            {imageError && (
+              <span className="font-mono text-[10.5px] text-red-400">{imageError}</span>
+            )}
+          </div>
+        )}
+
         <div
           className={cn(
             'mt-3 flex items-start gap-2 flex-wrap transition-all duration-300',
@@ -434,20 +552,24 @@ function CenterPanel({
           <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-600 mt-2 mr-1">
             Try
           </span>
-          {SAMPLE_TASKS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTask(t)}
-              className={cn(
-                'h-7 px-3 rounded-lg border text-[11.5px] transition truncate max-w-[300px]',
-                task === t
-                  ? 'border-violet-500/40 bg-violet-500/10 text-violet-300'
-                  : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200',
-              )}
-            >
-              {t}
-            </button>
-          ))}
+          {SAMPLE_TASKS.map((s) => {
+            const active = task === s.label
+            return (
+              <button
+                key={s.label}
+                onClick={() => onSampleClick(s)}
+                className={cn(
+                  'h-7 px-3 rounded-lg border text-[11.5px] transition truncate max-w-[340px] inline-flex items-center gap-1.5',
+                  active
+                    ? 'border-violet-500/40 bg-violet-500/10 text-violet-300'
+                    : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200',
+                )}
+              >
+                {s.imageUrl && <ImageIcon size={11} strokeWidth={1.75} className="shrink-0" />}
+                <span className="truncate">{s.label}</span>
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -460,83 +582,113 @@ function CenterPanel({
 
 /* ── Right panel — Execution log ──────────────────────────── */
 type Execution = {
-  hash: string
+  id: string
   task: string
   at: number
-  capability: string
-  provider: string
-  rejected: { id: string; name: string; costDeltaPct: number }[]
-  costUsdc: number
-  savedUsdc: number
+  steps: CapabilityStep[]
+  totalCostUsdc: number
+  totalSavedUsdc: number
+  plan: PlanSummary
+}
+
+type StepRef = { execId: string; stepIdx: number }
+
+function StepRow({
+  step,
+  onOpenTx,
+}: {
+  step: CapabilityStep
+  onOpenTx: () => void
+}) {
+  const isPending = step.txHash.startsWith('pending-')
+  const valueRej = step.rejectedProviders.find(
+    (r) => r.reason === 'cost delta exceeds task value threshold',
+  )
+  return (
+    <div className="rounded-md border border-zinc-800/70 bg-zinc-950/40 px-2.5 py-2 space-y-1 font-mono text-[11px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-[0.14em] text-zinc-500 shrink-0">
+          {step.capabilityLabel}
+        </span>
+        <span className="text-violet-300 truncate text-right text-[11px] font-medium">
+          {step.selectedProvider.name}
+        </span>
+      </div>
+      {valueRej && (
+        <div className="flex justify-between gap-3 text-[10.5px]">
+          <span className="text-zinc-600 shrink-0">rejected</span>
+          <span className="text-red-400/80 truncate text-right">
+            {valueRej.name}{' '}
+            <span className="text-red-400/60">(+{valueRej.costDeltaPct}%)</span>
+          </span>
+        </div>
+      )}
+      <div className="flex justify-between gap-3 text-[10.5px]">
+        <span className="text-zinc-600 shrink-0">cost</span>
+        <span className="text-zinc-300 num-tab">{step.costUsdc.toFixed(3)} USDC</span>
+      </div>
+      {step.savedUsdc > 0 && (
+        <div className="flex justify-between gap-3 text-[10.5px]">
+          <span className="text-zinc-600 shrink-0">saved</span>
+          <span className="text-emerald-400 num-tab">{step.savedUsdc.toFixed(3)} USDC</span>
+        </div>
+      )}
+      <div className="flex justify-between items-center gap-3 text-[10.5px]">
+        <span className="text-zinc-600 shrink-0">tx</span>
+        <button
+          onClick={onOpenTx}
+          className={cn(
+            'inline-flex items-center gap-1 transition shrink-0',
+            isPending
+              ? 'text-amber-400/80 hover:text-amber-300'
+              : 'text-violet-400 hover:text-violet-300',
+          )}
+        >
+          {isPending ? 'pending settlement' : truncAddr(step.txHash, 4, 4)}{' '}
+          <ExternalLink size={10} strokeWidth={1.75} />
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function ExecutionCard({
   exec,
-  onOpenTx,
+  onOpenStep,
 }: {
   exec: Execution
-  onOpenTx: (hash: string) => void
+  onOpenStep: (ref: StepRef) => void
 }) {
-  const taskShort = exec.task.length > 36 ? exec.task.slice(0, 34) + '…' : exec.task
-  const valueRej = exec.rejected.find((r) => r.costDeltaPct > 0)
-  const isPending = exec.hash.startsWith('pending-')
+  const taskShort = exec.task.length > 48 ? exec.task.slice(0, 46) + '…' : exec.task
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 mb-2 screen-in">
-      <div className="flex items-center justify-between gap-2 mb-2.5">
+      <div className="flex items-center justify-between gap-2 mb-2">
         <span className="text-[12px] text-zinc-200 truncate font-medium">{taskShort}</span>
         <span className="inline-flex items-center h-[18px] px-1.5 rounded text-[9.5px] font-mono uppercase tracking-[0.1em] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
           complete
         </span>
       </div>
-      <div className="space-y-1 font-mono text-[11px]">
-        <div className="flex justify-between gap-3">
-          <span className="text-zinc-600 shrink-0">capability</span>
-          <span className="text-zinc-300 truncate text-right">{exec.capability}</span>
-        </div>
-        <div className="flex justify-between gap-3">
-          <span className="text-zinc-600 shrink-0">provider</span>
-          <span className="text-zinc-300 truncate text-right">{exec.provider}</span>
-        </div>
-        <div className="flex justify-between gap-3">
-          <span className="text-zinc-600 shrink-0">decision</span>
-          <span className="text-zinc-300 truncate text-right">cheapest-eligible</span>
-        </div>
-        {valueRej && (
-          <div className="flex justify-between gap-3">
-            <span className="text-zinc-600 shrink-0">rejected</span>
-            <span className="text-red-400/80 truncate text-right">
-              {valueRej.name}{' '}
-              <span className="text-red-400/60">(+{valueRej.costDeltaPct}%)</span>
-            </span>
-          </div>
+      <div className="font-mono text-[10.5px] text-zinc-500 mb-2 truncate">
+        plan · <span className="text-zinc-300">{exec.plan.capabilities.join(' → ')}</span>
+      </div>
+      <div className="space-y-1.5">
+        {exec.steps.map((s, i) => (
+          <StepRow
+            key={`${s.txHash}-${i}`}
+            step={s}
+            onOpenTx={() => onOpenStep({ execId: exec.id, stepIdx: i })}
+          />
+        ))}
+      </div>
+      <div className="mt-2 pt-2 border-t border-zinc-800/60 flex items-center justify-between font-mono text-[10.5px]">
+        <span className="text-zinc-500">
+          total · <span className="text-zinc-200 num-tab">{exec.totalCostUsdc.toFixed(3)}</span> USDC
+        </span>
+        {exec.totalSavedUsdc > 0 && (
+          <span className="text-emerald-400">
+            saved <span className="num-tab">{exec.totalSavedUsdc.toFixed(3)}</span>
+          </span>
         )}
-        <div className="flex justify-between gap-3">
-          <span className="text-zinc-600 shrink-0">cost</span>
-          <span className="text-zinc-300 num-tab text-right">{exec.costUsdc.toFixed(3)} USDC</span>
-        </div>
-        {exec.savedUsdc > 0 && (
-          <div className="flex justify-between gap-3">
-            <span className="text-zinc-600 shrink-0">saved</span>
-            <span className="text-emerald-400 num-tab text-right">
-              {exec.savedUsdc.toFixed(3)} USDC
-            </span>
-          </div>
-        )}
-        <div className="flex justify-between items-center gap-3">
-          <span className="text-zinc-600 shrink-0">tx</span>
-          <button
-            onClick={() => onOpenTx(exec.hash)}
-            className={cn(
-              'inline-flex items-center gap-1 transition shrink-0',
-              isPending
-                ? 'text-amber-400/80 hover:text-amber-300'
-                : 'text-violet-400 hover:text-violet-300',
-            )}
-          >
-            {isPending ? 'pending settlement' : truncAddr(exec.hash, 4, 4)}{' '}
-            <ExternalLink size={10} strokeWidth={1.75} />
-          </button>
-        </div>
       </div>
     </div>
   )
@@ -544,14 +696,17 @@ function ExecutionCard({
 
 function RightPanel({
   executions,
-  onOpenTx,
+  onOpenStep,
 }: {
   executions: Execution[]
-  onOpenTx: (hash: string) => void
+  onOpenStep: (ref: StepRef) => void
 }) {
   const tasksRun = executions.length
-  const providersRejected = executions.reduce((sum, e) => sum + e.rejected.length, 0)
-  const usdcSaved = executions.reduce((sum, e) => sum + e.savedUsdc, 0)
+  const providersRejected = executions.reduce(
+    (sum, e) => sum + e.steps.reduce((ss, s) => ss + s.rejectedProviders.length, 0),
+    0,
+  )
+  const usdcSaved = executions.reduce((sum, e) => sum + e.totalSavedUsdc, 0)
 
   return (
     <aside className="w-[300px] shrink-0 border-l border-zinc-800 bg-zinc-950 flex flex-col overflow-hidden">
@@ -605,7 +760,7 @@ function RightPanel({
           </div>
         ) : (
           executions.map((e) => (
-            <ExecutionCard key={e.hash} exec={e} onOpenTx={onOpenTx} />
+            <ExecutionCard key={e.id} exec={e} onOpenStep={onOpenStep} />
           ))
         )}
       </div>
@@ -623,21 +778,23 @@ function RightPanel({
 
 /* ── Solscan modal ────────────────────────────────────────── */
 function SolscanModal({
-  exec,
+  step,
+  task,
   onClose,
 }: {
-  exec: Execution | null
+  step: CapabilityStep | null
+  task: string | null
   onClose: () => void
 }) {
   useEffect(() => {
-    if (!exec) return
+    if (!step) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [exec, onClose])
+  }, [step, onClose])
 
-  if (!exec) return null
-  const isPending = exec.hash.startsWith('pending-')
+  if (!step) return null
+  const isPending = step.txHash.startsWith('pending-')
 
   return (
     <div
@@ -666,6 +823,14 @@ function SolscanModal({
           </button>
         </div>
         <div className="p-5 space-y-3 font-mono text-[12px]">
+          {task && (
+            <div>
+              <div className="text-zinc-500 text-[10px] uppercase tracking-[0.14em] mb-1">
+                Task · {step.capabilityLabel}
+              </div>
+              <div className="text-zinc-300 leading-snug">{task}</div>
+            </div>
+          )}
           <div>
             <div className="text-zinc-500 text-[10px] uppercase tracking-[0.14em] mb-1">
               Signature
@@ -674,7 +839,7 @@ function SolscanModal({
               'break-all leading-snug',
               isPending ? 'text-amber-400' : 'text-violet-400',
             )}>
-              {exec.hash}
+              {step.txHash}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -686,18 +851,18 @@ function SolscanModal({
             </div>
             <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
               <div className="text-zinc-500 text-[10px] uppercase tracking-[0.12em]">Amount</div>
-              <div className="text-white mt-1 num-tab">{exec.costUsdc.toFixed(3)} USDC</div>
+              <div className="text-white mt-1 num-tab">{step.costUsdc.toFixed(3)} USDC</div>
             </div>
           </div>
           {isPending ? (
             <div className="text-[10.5px] text-amber-400/70 text-center pt-2 leading-relaxed">
-              x402 onchain settlement is pending CDP credentials. The agent ran the cost/value
-              decision and called the live provider, but no Solana transaction was signed yet.
+              Settlement is pending — the gateway wallet failed to sign on devnet. The
+              cost/value decision and the live provider call still ran.
             </div>
           ) : (
             <div className="text-[10px] text-zinc-600 text-center pt-2">
               <a
-                href={`https://solscan.io/tx/${exec.hash}?cluster=devnet`}
+                href={`https://solscan.io/tx/${step.txHash}?cluster=devnet`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-zinc-400 hover:text-white underline underline-offset-2"
@@ -718,34 +883,27 @@ export default function DashboardPage() {
   const { wallet, initialBudget, setWallet } = usePayableSession()
   const { balance, isLoading: balanceLoading } = useAgentBalance()
   const [executions, setExecutions] = useState<Execution[]>([])
-  const [openExec, setOpenExec] = useState<Execution | null>(null)
+  const [openStep, setOpenStep] = useState<{ step: CapabilityStep; task: string } | null>(null)
   const [decisionMap, setDecisionMap] = useState<DecisionMap>({})
   const [errorBanner, setErrorBanner] = useState<string | null>(null)
 
   const spent = useMemo(
-    () => executions.reduce((sum, e) => sum + e.costUsdc, 0),
+    () => executions.reduce((sum, e) => sum + e.totalCostUsdc, 0),
     [executions],
   )
   const remaining = Math.max(0, +(initialBudget - spent).toFixed(4))
 
   const { phase, lines, running, run } = useAgentRun({
     onComplete: ({ response, task }) => {
-      const step = response.steps[0]
-      if (!step) return
       setExecutions((prev) => [
         {
-          hash: step.txHash,
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           task,
           at: Date.now(),
-          capability: step.capabilityLabel,
-          provider: step.selectedProvider.name,
-          rejected: step.rejectedProviders.map((r) => ({
-            id: r.id,
-            name: r.name,
-            costDeltaPct: r.costDeltaPct,
-          })),
-          costUsdc: step.costUsdc,
-          savedUsdc: step.savedUsdc,
+          steps: response.steps,
+          totalCostUsdc: response.totalCostUsdc,
+          totalSavedUsdc: response.totalSavedUsdc,
+          plan: response.plan,
         },
         ...prev,
       ])
@@ -780,10 +938,22 @@ export default function DashboardPage() {
     navigateWithTransition(router, '/connect', 'nav-back')
   }
 
-  const handleRun = (task: string) => {
+  const handleRun = (task: string, imageUrl?: string) => {
     if (!wallet) return
     setErrorBanner(null)
-    run({ task, budget: remaining > 0 ? remaining : initialBudget, walletAddress: wallet })
+    run({
+      task,
+      budget: remaining > 0 ? remaining : initialBudget,
+      walletAddress: wallet,
+      imageUrl,
+    })
+  }
+
+  const handleOpenStep = ({ execId, stepIdx }: StepRef) => {
+    const exec = executions.find((e) => e.id === execId)
+    const step = exec?.steps[stepIdx]
+    if (!exec || !step) return
+    setOpenStep({ step, task: exec.task })
   }
 
   return (
@@ -821,12 +991,16 @@ export default function DashboardPage() {
             running={running}
             disabled={!wallet}
           />
-          <RightPanel executions={executions} onOpenTx={(h) => {
-            const e = executions.find((x) => x.hash === h) ?? null
-            setOpenExec(e)
-          }} />
+          <RightPanel
+            executions={executions}
+            onOpenStep={handleOpenStep}
+          />
         </div>
-        <SolscanModal exec={openExec} onClose={() => setOpenExec(null)} />
+        <SolscanModal
+          step={openStep?.step ?? null}
+          task={openStep?.task ?? null}
+          onClose={() => setOpenStep(null)}
+        />
       </div>
     </ViewTransition>
   )

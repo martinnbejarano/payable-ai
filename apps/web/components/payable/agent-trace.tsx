@@ -28,6 +28,7 @@ function lineClass(type: ReasoningLineType): string {
     case 'http':     return 'text-zinc-600'
     case 'settled':  return 'text-emerald-400'
     case 'complete': return 'text-emerald-300 font-medium'
+    case 'plan':     return 'text-violet-300 font-semibold text-[13px]'
     default:         return 'text-zinc-300'
   }
 }
@@ -39,6 +40,7 @@ export function PhasePill({ phase }: { phase: Phase }) {
       className={cn(
         'relative inline-flex items-center gap-2 h-[26px] px-2.5 rounded-md border font-mono text-[10.5px] tracking-[0.14em] uppercase overflow-hidden',
         phase === 'IDLE'       && 'border-zinc-800 bg-zinc-900 text-zinc-500',
+        phase === 'PLANNING'   && 'border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300',
         phase === 'EVALUATING' && 'border-blue-500/30 bg-blue-500/10 text-blue-400',
         phase === 'DECIDING'   && 'border-amber-500/30 bg-amber-500/10 text-amber-400',
         phase === 'ACQUIRING'  && 'border-violet-500/30 bg-violet-500/10 text-violet-300',
@@ -50,7 +52,8 @@ export function PhasePill({ phase }: { phase: Phase }) {
       )}
       <PulseDot
         tone={
-          phase === 'EVALUATING' ? 'muted'
+          phase === 'PLANNING' ? 'accent'
+          : phase === 'EVALUATING' ? 'muted'
           : phase === 'DECIDING' ? 'warn'
           : phase === 'ACQUIRING' ? 'accent'
           : phase === 'COMPLETE' ? 'success'
@@ -104,8 +107,8 @@ export function AgentTrace({
   }, [lines, running])
 
   const evals = lines.filter((l) => l.type === 'eval').length
-  const cost =
-    costUsdc ?? (lines.some((l) => l.type === 'settled' || l.type === 'complete') ? 0.002 : 0)
+  const settledCount = lines.filter((l) => l.type === 'settled').length
+  const cost = costUsdc ?? +(settledCount * 0.005).toFixed(3)
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 overflow-hidden flex flex-col h-full">
@@ -168,7 +171,7 @@ export function AgentTrace({
 }
 
 /* ── useAgentRun ──────────────────────────────────────────── */
-type RunArgs = { task: string; budget: number; walletAddress: string }
+type RunArgs = { task: string; budget: number; walletAddress: string; imageUrl?: string }
 
 type UseAgentRunArgs = {
   onTxConfirmed?: (info: { hash: string; task: string }) => void
@@ -206,13 +209,13 @@ export function useAgentRun({ onTxConfirmed, onComplete, onError }: UseAgentRunA
     setLastTx(null)
   }, [])
 
-  const run = useCallback(async ({ task, budget, walletAddress }: RunArgs) => {
+  const run = useCallback(async ({ task, budget, walletAddress, imageUrl }: RunArgs) => {
     abortRef.current?.abort()
     const ac = new AbortController()
     abortRef.current = ac
 
     setLines([])
-    setPhase('EVALUATING')
+    setPhase('PLANNING')
     setRunning(true)
     setLastTask(task)
     setLastTx(null)
@@ -221,7 +224,7 @@ export function useAgentRun({ onTxConfirmed, onComplete, onError }: UseAgentRunA
       const res = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ task, budget, walletAddress }),
+        body: JSON.stringify({ task, budget, walletAddress, imageUrl }),
         signal: ac.signal,
       })
       if (!res.ok || !res.body) {
