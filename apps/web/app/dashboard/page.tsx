@@ -730,20 +730,22 @@ export default function DashboardPage() {
 
   const { phase, lines, running, run } = useAgentRun({
     onComplete: ({ response, task }) => {
+      const step = response.steps[0]
+      if (!step) return
       setExecutions((prev) => [
         {
-          hash: response.txHash,
+          hash: step.txHash,
           task,
           at: Date.now(),
-          capability: response.selectedCapability,
-          provider: response.selectedProvider.name,
-          rejected: response.rejectedProviders.map((r) => ({
+          capability: step.capabilityLabel,
+          provider: step.selectedProvider.name,
+          rejected: step.rejectedProviders.map((r) => ({
             id: r.id,
             name: r.name,
             costDeltaPct: r.costDeltaPct,
           })),
-          costUsdc: response.costUsdc,
-          savedUsdc: response.savedUsdc,
+          costUsdc: step.costUsdc,
+          savedUsdc: step.savedUsdc,
         },
         ...prev,
       ])
