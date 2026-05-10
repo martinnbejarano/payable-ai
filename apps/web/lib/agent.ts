@@ -85,7 +85,9 @@ export function runAgent(
         line('sys', 'Querying compute market...', 'EVALUATING')
         await sleep(620)
 
-        const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+        const base =
+          process.env.NEXT_PUBLIC_APP_URL ??
+          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
         const discoverRes = await fetch(`${base}/api/discover`)
         if (!discoverRes.ok) {
           fail(`Discover failed: ${discoverRes.status}`)
