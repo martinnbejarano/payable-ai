@@ -261,18 +261,18 @@ export default function ConnectPage() {
                 </div>
 
                 <div className="relative">
-                  <div className="flex items-center h-14 rounded-xl border border-zinc-800 bg-zinc-950/70 px-4 transition-colors focus-within:border-accent/60">
+                  <div className="flex items-center gap-2 h-14 rounded-xl border border-zinc-800 bg-zinc-950/70 pl-4 pr-3 transition-colors focus-within:border-accent/60">
                     <input
                       type="text"
                       inputMode="decimal"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
                       disabled={!wallet}
-                      className="flex-1 bg-transparent outline-none text-[24px] font-mono font-medium text-white placeholder:text-zinc-700 num-tab"
+                      className="flex-1 min-w-0 bg-transparent outline-none text-[24px] font-mono font-medium text-white placeholder:text-zinc-700 num-tab"
                       placeholder="0.0000"
                       aria-label="Agent budget in USDC"
                     />
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <span className="text-[14px] font-mono text-zinc-400">USDC</span>
                       <Badge tone="blue" mono className="!h-5">
                         DEVNET
