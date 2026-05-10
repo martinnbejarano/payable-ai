@@ -9,9 +9,11 @@ import {
   Code as CodeIcon,
   ChevronRight,
   ExternalLink,
+  FileText,
   Image as ImageIcon,
   Paperclip,
   Plus,
+  Search as SearchIcon,
   Sparkles,
   X,
   Zap,
@@ -26,6 +28,7 @@ import { cn } from '@/lib/utils'
 import { usePayableSession } from '@/components/payable/session'
 import { navigateWithTransition } from '@/components/payable/nav'
 import { useAgentBalance } from '@/hooks/useAgentBalance'
+import { summarizeRun, writeLastRun } from '@/lib/last-run'
 
 /* ── Compute market data (mirror of /api/discover) ────────── */
 const CAPABILITIES = [
@@ -393,6 +396,7 @@ function CenterPanel({
   const [task, setTask] = useState<string>(SAMPLE_TASKS[0].label)
   const [pendingImage, setPendingImage] = useState<string | null>(SAMPLE_TASKS[0].imageUrl ?? null)
   const [imageError, setImageError] = useState<string | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const submit = () => {
@@ -512,25 +516,33 @@ function CenterPanel({
         {(pendingImage || imageError) && !running && (
           <div className="mt-2 flex items-center gap-2">
             {pendingImage && (
-              <div className="inline-flex items-center gap-2 h-8 pl-1 pr-2 rounded-md border border-violet-500/30 bg-violet-500/5">
-                {pendingImage.startsWith('data:') ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={pendingImage}
-                    alt="attached"
-                    className="h-6 w-6 rounded object-cover"
-                  />
-                ) : (
-                  <span className="h-6 w-6 rounded bg-violet-500/20 inline-flex items-center justify-center text-violet-300">
-                    <ImageIcon size={11} strokeWidth={1.75} />
+              <div className="inline-flex items-center h-8 rounded-md border border-violet-500/30 bg-violet-500/5">
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(true)}
+                  className="group inline-flex items-center gap-2 h-full pl-1 pr-2 rounded-md hover:bg-violet-500/10 transition-colors"
+                  aria-label="Preview attached image"
+                  title="Click to preview"
+                >
+                  {pendingImage.startsWith('data:') ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={pendingImage}
+                      alt="attached"
+                      className="h-6 w-6 rounded object-cover ring-0 group-hover:ring-1 group-hover:ring-violet-400/50 transition"
+                    />
+                  ) : (
+                    <span className="h-6 w-6 rounded bg-violet-500/20 inline-flex items-center justify-center text-violet-300 group-hover:bg-violet-500/30 transition">
+                      <ImageIcon size={11} strokeWidth={1.75} />
+                    </span>
+                  )}
+                  <span className="font-mono text-[10.5px] text-violet-300 group-hover:text-violet-200">
+                    {pendingImage.startsWith('data:') ? 'uploaded image' : pendingImage}
                   </span>
-                )}
-                <span className="font-mono text-[10.5px] text-violet-300">
-                  {pendingImage.startsWith('data:') ? 'uploaded image' : pendingImage}
-                </span>
+                </button>
                 <button
                   onClick={clearImage}
-                  className="ml-0.5 h-4 w-4 rounded text-violet-300/70 hover:text-violet-200 hover:bg-violet-500/20 inline-flex items-center justify-center"
+                  className="ml-0.5 mr-1 h-4 w-4 rounded text-violet-300/70 hover:text-violet-200 hover:bg-violet-500/20 inline-flex items-center justify-center"
                   aria-label="Remove image"
                 >
                   <X size={10} strokeWidth={1.75} />
@@ -542,6 +554,10 @@ function CenterPanel({
             )}
           </div>
         )}
+        <ImageModal
+          src={previewOpen ? pendingImage : null}
+          onClose={() => setPreviewOpen(false)}
+        />
 
         <div
           className={cn(
@@ -604,8 +620,19 @@ function StepRow({
   const valueRej = step.rejectedProviders.find(
     (r) => r.reason === 'cost delta exceeds task value threshold',
   )
+  const outputHint =
+    step.output?.kind === 'ocr'
+      ? `${step.output.text.length} chars`
+      : step.output?.kind === 'search'
+        ? `${step.output.results.length} results`
+        : null
   return (
-    <div className="rounded-md border border-zinc-800/70 bg-zinc-950/40 px-2.5 py-2 space-y-1 font-mono text-[11px]">
+    <button
+      type="button"
+      onClick={onOpenTx}
+      className="block w-full text-left rounded-md border border-zinc-800/70 bg-zinc-950/40 hover:border-violet-500/40 hover:bg-zinc-950/80 px-2.5 py-2 space-y-1 font-mono text-[11px] transition-colors group focus:outline-none focus:ring-1 focus:ring-violet-500/50"
+      aria-label={`View ${step.capabilityLabel} output`}
+    >
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] uppercase tracking-[0.14em] text-zinc-500 shrink-0">
           {step.capabilityLabel}
@@ -635,20 +662,27 @@ function StepRow({
       )}
       <div className="flex justify-between items-center gap-3 text-[10.5px]">
         <span className="text-zinc-600 shrink-0">tx</span>
-        <button
-          onClick={onOpenTx}
+        <span
           className={cn(
-            'inline-flex items-center gap-1 transition shrink-0',
-            isPending
-              ? 'text-amber-400/80 hover:text-amber-300'
-              : 'text-violet-400 hover:text-violet-300',
+            'truncate text-right',
+            isPending ? 'text-amber-400/80' : 'text-violet-400/80',
           )}
         >
-          {isPending ? 'pending settlement' : truncAddr(step.txHash, 4, 4)}{' '}
-          <ExternalLink size={10} strokeWidth={1.75} />
-        </button>
+          {isPending ? 'pending settlement' : truncAddr(step.txHash, 4, 4)}
+        </span>
       </div>
-    </div>
+      <div className="pt-1 mt-1 border-t border-zinc-900/60 flex items-center justify-between text-[10px] text-zinc-600 group-hover:text-violet-300 transition-colors">
+        <span className="inline-flex items-center gap-1">
+          <Activity size={10} strokeWidth={1.75} />
+          {step.output ? `view output · ${outputHint}` : 'view step'}
+        </span>
+        <ChevronRight
+          size={11}
+          strokeWidth={1.75}
+          className="translate-x-0 group-hover:translate-x-0.5 transition-transform"
+        />
+      </div>
+    </button>
   )
 }
 
@@ -809,9 +843,9 @@ function SolscanModal({
       >
         <div className="flex items-center justify-between px-4 h-11 border-b border-zinc-800">
           <div className="flex items-center gap-2">
-            <ExternalLink size={13} strokeWidth={1.75} className="text-zinc-400" />
+            <Activity size={13} strokeWidth={1.75} className="text-zinc-400" />
             <span className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-zinc-400">
-              solscan · devnet
+              step · {step.capabilityLabel.toLowerCase()}
             </span>
           </div>
           <button
@@ -854,6 +888,7 @@ function SolscanModal({
               <div className="text-white mt-1 num-tab">{step.costUsdc.toFixed(3)} USDC</div>
             </div>
           </div>
+          {step.output && <StepOutput output={step.output} />}
           {isPending ? (
             <div className="text-[10.5px] text-amber-400/70 text-center pt-2 leading-relaxed">
               Settlement is pending — the gateway wallet failed to sign on devnet. The
@@ -873,6 +908,146 @@ function SolscanModal({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ── Image preview modal ──────────────────────────────────── */
+function ImageModal({
+  src,
+  onClose,
+}: {
+  src: string | null
+  onClose: () => void
+}) {
+  useEffect(() => {
+    if (!src) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [src, onClose])
+
+  if (!src) return null
+  const isData = src.startsWith('data:')
+  const label = isData ? 'uploaded image' : src
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm screen-in"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="relative rounded-xl border border-zinc-800 bg-zinc-950 overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 'min(960px, 92vw)', maxHeight: '88vh' }}
+      >
+        <div className="flex items-center justify-between px-4 h-11 border-b border-zinc-800 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <ImageIcon size={13} strokeWidth={1.75} className="text-zinc-400 shrink-0" />
+            <span className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-zinc-400 shrink-0">
+              attached image
+            </span>
+            <span className="text-zinc-700 shrink-0">·</span>
+            <span className="font-mono text-[10.5px] text-zinc-500 truncate">{label}</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-200 h-7 w-7 inline-flex items-center justify-center rounded hover:bg-zinc-900 shrink-0"
+            aria-label="Close"
+          >
+            <X size={13} strokeWidth={1.75} />
+          </button>
+        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt="attached preview"
+          className="block bg-zinc-950 object-contain"
+          style={{ maxWidth: 'min(960px, 92vw)', maxHeight: 'calc(88vh - 44px)' }}
+        />
+      </div>
+    </div>
+  )
+}
+
+/* ── Step output rendering (OCR text / search results) ────── */
+function StepOutput({ output }: { output: NonNullable<CapabilityStep['output']> }) {
+  if (output.kind === 'ocr') {
+    const conf = Math.round(output.confidence * 100)
+    return (
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+        <div className="flex items-center justify-between px-3 h-8 border-b border-zinc-800/80 bg-zinc-900/60">
+          <div className="flex items-center gap-1.5">
+            <FileText size={11} strokeWidth={1.75} className="text-zinc-400" />
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-400">
+              Output · OCR text
+            </span>
+          </div>
+          <div className="flex items-center gap-2 font-mono text-[10px]">
+            <span className="text-zinc-600 num-tab">{output.text.length} chars</span>
+            <span className="text-zinc-700">·</span>
+            <span
+              className={cn(
+                'num-tab',
+                conf >= 90
+                  ? 'text-emerald-400'
+                  : conf >= 70
+                    ? 'text-amber-400'
+                    : 'text-red-400/80',
+              )}
+            >
+              {conf}% conf
+            </span>
+          </div>
+        </div>
+        <div className="px-3 py-2.5 max-h-[200px] overflow-auto thin-scroll text-[11.5px] leading-[1.55] text-zinc-200 whitespace-pre-wrap break-words">
+          {output.text || <span className="text-zinc-600 italic">empty</span>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+      <div className="flex items-center justify-between px-3 h-8 border-b border-zinc-800/80 bg-zinc-900/60">
+        <div className="flex items-center gap-1.5">
+          <SearchIcon size={11} strokeWidth={1.75} className="text-zinc-400" />
+          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-400">
+            Output · search results
+          </span>
+        </div>
+        <span className="font-mono text-[10px] text-zinc-600 num-tab">
+          {output.results.length} {output.results.length === 1 ? 'result' : 'results'}
+        </span>
+      </div>
+      <ol className="divide-y divide-zinc-900/80 max-h-[260px] overflow-auto thin-scroll">
+        {output.results.length === 0 && (
+          <li className="px-3 py-3 text-[11.5px] text-zinc-500 italic">no results</li>
+        )}
+        {output.results.map((r, i) => (
+          <li key={`${r.url}-${i}`} className="px-3 py-2.5">
+            <a
+              href={r.url}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-[11.5px] text-violet-300 hover:text-violet-200 leading-snug truncate"
+              title={r.title}
+            >
+              {String(i + 1).padStart(2, '0')} · {r.title}
+            </a>
+            <div className="mt-0.5 font-mono text-[10px] text-zinc-600 truncate">
+              {r.url}
+            </div>
+            {r.snippet && (
+              <div className="mt-1 text-[11px] text-zinc-400 leading-snug line-clamp-3">
+                {r.snippet}
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }
@@ -907,6 +1082,7 @@ export default function DashboardPage() {
         },
         ...prev,
       ])
+      writeLastRun(summarizeRun(task, response))
     },
     onError: ({ message }) => {
       setErrorBanner(message)

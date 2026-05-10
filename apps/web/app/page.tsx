@@ -1,7 +1,19 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, Brain, Compass, Cpu, ExternalLink, Github, Zap } from 'lucide-react'
+import {
+  ArrowRight,
+  Brain,
+  Compass,
+  Cpu,
+  ExternalLink,
+  Github,
+  Receipt,
+  Sparkles,
+  X,
+  Zap,
+} from 'lucide-react'
 import {
   Badge,
   Logo,
@@ -11,6 +23,12 @@ import {
 } from '@/components/payable/primitives'
 import { navigateWithTransition } from '@/components/payable/nav'
 import { ViewTransition } from '@/components/payable/view-transition'
+import {
+  type LastRunSummary,
+  readLastRun,
+  SAMPLE_LAST_RUN,
+} from '@/lib/last-run'
+import { cn } from '@/lib/utils'
 
 function LandingNav({ onLaunch }: { onLaunch: () => void }) {
   return (
@@ -134,6 +152,353 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
             <span>An autonomous agent reasoning over real economic constraints — no human in the loop.</span>
           </div>
         </div>
+      </div>
+    </section>
+  )
+}
+
+/* ── Receipts (before/after) ──────────────────────────────── */
+function fmtUsdc(n: number, frac = 3) {
+  return n.toFixed(frac)
+}
+
+function timeAgoShort(ts: number) {
+  if (!ts) return null
+  const s = Math.max(1, Math.floor((Date.now() - ts) / 1000))
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+function ReceiptHeader({
+  variant,
+  label,
+  subline,
+}: {
+  variant: 'naive' | 'payable'
+  label: string
+  subline: string
+}) {
+  const tone =
+    variant === 'naive'
+      ? 'border-rose-500/15 bg-rose-500/[0.04] text-rose-300'
+      : 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-300'
+  return (
+    <div className={cn('flex items-center justify-between px-5 h-11 border-b', tone)}>
+      <div className="flex items-center gap-2.5">
+        {variant === 'naive' ? (
+          <X size={13} strokeWidth={2.25} />
+        ) : (
+          <Sparkles size={13} strokeWidth={1.75} />
+        )}
+        <span className="font-mono text-[11px] uppercase tracking-[0.18em]">{label}</span>
+      </div>
+      <span className="font-mono text-[10.5px] text-zinc-500 tracking-[0.06em]">{subline}</span>
+    </div>
+  )
+}
+
+function ReceiptRow({
+  capability,
+  picked,
+  pickedTone,
+  rejected,
+  withDelta,
+}: {
+  capability: string
+  picked: { name: string; price: number }
+  pickedTone: 'naive' | 'payable'
+  rejected?: { name: string; price: number; deltaPct?: number }
+  withDelta?: boolean
+}) {
+  const priceTone =
+    pickedTone === 'naive' ? 'text-rose-200' : 'text-emerald-200'
+  return (
+    <div className="px-5 py-3.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+            {capability}
+          </div>
+          <div className="mt-0.5 font-mono text-[13px] text-zinc-200 truncate">{picked.name}</div>
+        </div>
+        <div className={cn('font-mono text-[14px] num-tab tabular-nums', priceTone)}>
+          {fmtUsdc(picked.price)}
+        </div>
+      </div>
+      {rejected && (
+        <div className="mt-1.5 flex items-baseline justify-between gap-3 pl-2 border-l border-zinc-900/80">
+          <div className="font-mono text-[10.5px] text-zinc-600 truncate">
+            <span className="text-zinc-700">↳ rejected · </span>
+            <span className="line-through decoration-zinc-700">{rejected.name}</span>
+          </div>
+          <div className="font-mono text-[10.5px] text-zinc-600 num-tab tabular-nums">
+            <span className="line-through decoration-zinc-700">{fmtUsdc(rejected.price)}</span>
+            {withDelta && rejected.deltaPct != null && (
+              <span className="ml-1.5 text-emerald-500/70">−{rejected.deltaPct}%</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReceiptCard({
+  variant,
+  run,
+}: {
+  variant: 'naive' | 'payable'
+  run: LastRunSummary
+}) {
+  const isNaive = variant === 'naive'
+  const total = isNaive ? run.naiveWouldPayUsdc : run.payablePaidUsdc
+  const cardBorder = isNaive
+    ? 'border-zinc-800/80 hover:border-rose-500/20'
+    : 'border-zinc-800/80 hover:border-emerald-500/30'
+  const totalTone = isNaive ? 'text-rose-200' : 'text-emerald-200'
+
+  return (
+    <div
+      className={cn(
+        'relative rounded-2xl border bg-zinc-950/80 backdrop-blur overflow-hidden transition-colors',
+        'shadow-[0_30px_80px_-30px_rgba(0,0,0,0.7)]',
+        cardBorder,
+      )}
+    >
+      {/* receipt-y "thermal" notches */}
+      <div
+        aria-hidden
+        className="absolute -top-1.5 left-0 right-0 h-3 pointer-events-none"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle at 6px 6px, rgb(9 9 11) 4px, transparent 4.5px)',
+          backgroundSize: '12px 12px',
+          backgroundRepeat: 'repeat-x',
+        }}
+      />
+
+      <ReceiptHeader
+        variant={variant}
+        label={isNaive ? 'naive.agent' : 'payable.agent'}
+        subline={isNaive ? 'no economic reasoning' : 'cost / value reasoning'}
+      />
+
+      <div className="divide-y divide-zinc-900/80">
+        {run.steps.map((s) => {
+          if (isNaive) {
+            const premium = s.premium ?? s.selected
+            return (
+              <ReceiptRow
+                key={s.capabilityId}
+                capability={s.capabilityLabel}
+                picked={{ name: premium.name, price: premium.priceUsdc }}
+                pickedTone="naive"
+              />
+            )
+          }
+          const rejected = s.premium
+            ? {
+                name: s.premium.name,
+                price: s.premium.priceUsdc,
+                deltaPct: Math.round(
+                  ((s.premium.priceUsdc - s.selected.priceUsdc) / s.premium.priceUsdc) * 100,
+                ),
+              }
+            : undefined
+          return (
+            <ReceiptRow
+              key={s.capabilityId}
+              capability={s.capabilityLabel}
+              picked={{ name: s.selected.name, price: s.selected.priceUsdc }}
+              pickedTone="payable"
+              rejected={rejected}
+              withDelta
+            />
+          )
+        })}
+      </div>
+
+      {/* dotted divider */}
+      <div
+        aria-hidden
+        className="h-px mx-5"
+        style={{
+          backgroundImage:
+            'linear-gradient(to right, rgb(63 63 70 / 0.6) 50%, transparent 50%)',
+          backgroundSize: '6px 1px',
+          backgroundRepeat: 'repeat-x',
+        }}
+      />
+
+      <div className="px-5 py-4 flex items-baseline justify-between">
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-zinc-500">
+          Total
+        </span>
+        <span
+          className={cn(
+            'font-display font-medium tracking-tight num-tab tabular-nums text-[28px]',
+            totalTone,
+          )}
+        >
+          {fmtUsdc(total, 3)}
+          <span className="ml-1.5 align-baseline font-mono text-[11px] text-zinc-500">USDC</span>
+        </span>
+      </div>
+
+      <div className="px-5 pb-5 -mt-1 flex items-center gap-2 text-[10.5px] font-mono text-zinc-600">
+        {isNaive ? (
+          <>
+            <span className="text-rose-500/60">●</span>
+            <span>would-have-paid · 0 rejections</span>
+          </>
+        ) : (
+          <>
+            <PulseDot tone="success" size={5} />
+            <span>verified onchain · {run.steps.length} settlement{run.steps.length === 1 ? '' : 's'}</span>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Receipts() {
+  // SSR-safe two-pass: render sample first, then hydrate from localStorage.
+  const [run, setRun] = useState<LastRunSummary>(SAMPLE_LAST_RUN)
+  const [isReal, setIsReal] = useState(false)
+
+  useEffect(() => {
+    const persisted = readLastRun()
+    if (persisted) {
+      setRun(persisted)
+      setIsReal(true)
+    }
+  }, [])
+
+  const savedPct =
+    run.naiveWouldPayUsdc > 0
+      ? Math.round((run.savedUsdc / run.naiveWouldPayUsdc) * 100)
+      : 0
+  const at1k = run.savedUsdc * 1_000
+  const at1m = run.savedUsdc * 1_000_000
+
+  return (
+    <section className="border-t border-zinc-900 relative overflow-hidden">
+      <div
+        aria-hidden
+        className="absolute inset-0 dot-grid opacity-50 pointer-events-none"
+      />
+      <div className="max-w-[1200px] mx-auto px-6 py-24 relative">
+        <div className="flex items-end justify-between gap-8 mb-10 flex-wrap">
+          <div className="max-w-[640px]">
+            <SectionLabel className="mb-3">
+              <span className="inline-flex items-center gap-2">
+                <Receipt size={11} strokeWidth={1.75} />
+                Receipts · proof, not pitch
+              </span>
+            </SectionLabel>
+            <h2 className="font-display text-[36px] md:text-[46px] tracking-tightest text-white leading-[1.04]">
+              Two agents. Same task.
+              <br />
+              <span className="italic font-light text-transparent bg-clip-text bg-gradient-to-r from-accent-soft via-accent to-accent-soft">
+                One pays for what it doesn&apos;t need.
+              </span>
+            </h2>
+          </div>
+          <div className="text-right">
+            <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-zinc-500">
+              {isReal ? 'Your last run' : 'Sample run'}
+              {isReal && run.timestamp ? (
+                <> · <span className="text-zinc-400">{timeAgoShort(run.timestamp)}</span></>
+              ) : null}
+            </div>
+            <div className="mt-1.5 font-mono text-[12.5px] text-zinc-300 max-w-[420px] truncate">
+              <span className="text-zinc-600">$ </span>
+              {run.task}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 md:gap-2 items-stretch">
+          <ReceiptCard variant="naive" run={run} />
+
+          {/* Center diff arrow (md+) */}
+          <div className="hidden md:flex flex-col items-center justify-center px-4 select-none">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2">
+              vs
+            </div>
+            <div className="h-9 w-9 rounded-full border border-zinc-800 bg-zinc-950 flex items-center justify-center text-zinc-500">
+              <ArrowRight size={14} strokeWidth={1.75} />
+            </div>
+            <div className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-emerald-400/70">
+              −{savedPct}%
+            </div>
+          </div>
+
+          <ReceiptCard variant="payable" run={run} />
+        </div>
+
+        {/* Saved callout */}
+        <div className="mt-10 rounded-2xl border border-zinc-800 bg-gradient-to-b from-zinc-950 to-zinc-900/40 overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-zinc-900">
+            <div className="p-7 md:p-8">
+              <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-zinc-500">
+                Saved per task
+              </div>
+              <div className="mt-2 font-display font-medium tracking-tightest text-[44px] leading-none text-white num-tab tabular-nums">
+                {fmtUsdc(run.savedUsdc, 3)}
+                <span className="ml-2 align-baseline font-mono text-[14px] text-emerald-400">
+                  USDC
+                </span>
+              </div>
+              <div className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] font-mono text-emerald-400/90">
+                <PulseDot tone="success" size={5} />
+                {savedPct}% lower compute spend
+              </div>
+            </div>
+            <div className="p-7 md:p-8">
+              <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-zinc-500">
+                At 1,000 tasks
+              </div>
+              <div className="mt-2 font-display font-medium tracking-tightest text-[36px] leading-none text-zinc-200 num-tab tabular-nums">
+                ${at1k.toFixed(at1k < 100 ? 2 : 0)}
+              </div>
+              <div className="mt-2.5 text-[12px] text-zinc-500 leading-[1.45]">
+                Per workflow run, scaled. No model retraining, no infra changes.
+              </div>
+            </div>
+            <div className="p-7 md:p-8 relative">
+              <div className="absolute inset-0 mesh-bg opacity-50 pointer-events-none" />
+              <div className="relative">
+                <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-zinc-500">
+                  At 1M tasks / day
+                </div>
+                <div className="mt-2 font-display font-medium tracking-tightest text-[36px] leading-none text-white num-tab tabular-nums">
+                  ${at1m.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  <span className="ml-2 align-baseline font-mono text-[12px] text-zinc-500">
+                    / day
+                  </span>
+                </div>
+                <div className="mt-2.5 text-[12px] text-zinc-400 leading-[1.45]">
+                  The compounding cost of an agent that doesn&apos;t shop around.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {!isReal && (
+          <div className="mt-5 text-center">
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-zinc-600">
+              <PulseDot tone="muted" size={4} />
+              Run the demo — these numbers update with your own task.
+            </span>
+          </div>
+        )}
       </div>
     </section>
   )
@@ -353,6 +718,7 @@ export default function HomePage() {
       <div className="screen-in min-h-screen flex flex-col" data-screen-label="01 Landing">
         <LandingNav onLaunch={onLaunch} />
         <Hero onLaunch={onLaunch} />
+        <Receipts />
         <Features />
         <HowItWorks />
         <CtaStrip onLaunch={onLaunch} />
