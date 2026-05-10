@@ -1,51 +1,52 @@
 /**
  * GET /api/search
  *
- * x402-protected endpoint. Returns Tavily search results.
+ * Payment-gated endpoint. Requires `X-Payment-Tx` header containing a
+ * confirmed Solana devnet transaction signature. Without it (or with an
+ * unconfirmed / failed signature) returns 402 Payment Required.
  *
- * Without payment header → HTTP 402 with payment requirements
- * With valid USDC payment on Solana devnet → HTTP 200 with search results
- *
- * TEST:
- * curl "http://localhost:3000/api/search?q=cursor+competitors"
- * → 402 Payment Required
- *
- * curl -H "X-Payment: <signed_tx_base64>" \
- *   "http://localhost:3000/api/search?q=cursor+competitors"
- * → 200 OK with results
+ * The verification is lightweight: we only check that the signature
+ * exists and is confirmed. We don't (yet) verify the TX contents match
+ * the requested resource — that's the job of full x402 v2.
  */
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { tavilySearch } from '@/lib/tavily'
-import { paymentMiddlewareConfig } from '@/lib/x402'
+import { verifyPaymentSignature, SETTLEMENT_NETWORK } from '@/lib/x402'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const PAYMENT_AMOUNT_USDC = 0.002
+const PAYMENT_RECIPIENT = process.env.GATEWAY_WALLET_PUBLIC_KEY ?? ''
 
 export async function GET(request: NextRequest) {
   try {
-    // TODO: Uncomment once @x402/next middleware is fully wired with CDP credentials:
-    // const paymentHeader = request.headers.get('X-Payment')
-    // if (!paymentHeader) {
-    //   return NextResponse.json(
-    //     {
-    //       error: 'Payment Required',
-    //       code: 'PAYMENT_REQUIRED',
-    //       payment: {
-    //         amount: paymentMiddlewareConfig.amount,
-    //         currency: paymentMiddlewareConfig.currency,
-    //         network: paymentMiddlewareConfig.network,
-    //         recipient: paymentMiddlewareConfig.recipient,
-    //       },
-    //     },
-    //     { status: 402 }
-    //   )
-    // }
+    const paymentSig = request.headers.get('X-Payment-Tx')
+    const verification = await verifyPaymentSignature(paymentSig)
 
-    void paymentMiddlewareConfig // referenced so the import is not tree-shaken
+    if (!verification.ok) {
+      return NextResponse.json(
+        {
+          error: 'Payment Required',
+          code: 'PAYMENT_REQUIRED',
+          reason: verification.reason,
+          payment: {
+            amount: PAYMENT_AMOUNT_USDC,
+            currency: 'USDC',
+            network: SETTLEMENT_NETWORK,
+            recipient: PAYMENT_RECIPIENT,
+          },
+        },
+        { status: 402 },
+      )
+    }
 
     const query = request.nextUrl.searchParams.get('q')
     if (!query) {
       return NextResponse.json(
         { error: 'Missing query parameter: q', code: 'MISSING_QUERY' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -53,21 +54,19 @@ export async function GET(request: NextRequest) {
     if (!apiKey) {
       return NextResponse.json(
         { error: 'TAVILY_API_KEY is not configured', code: 'MISSING_API_KEY' },
-        { status: 500 }
+        { status: 500 },
       )
     }
 
     const results = await tavilySearch(query)
-
-    const txHash = request.headers.get('X-Payment') ?? 'unpaid'
     return NextResponse.json(results, {
-      headers: { 'X-Payment-Tx': txHash },
+      headers: { 'X-Payment-Tx': paymentSig ?? '' },
     })
   } catch (err) {
     console.error('[/api/search]', err)
     return NextResponse.json(
       { error: 'Search failed', code: 'SEARCH_ERROR' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

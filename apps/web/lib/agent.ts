@@ -22,6 +22,7 @@ import type {
   RejectionReason,
   SearchResult,
 } from '@payable-ai/types'
+import { settleOnchain } from './x402'
 
 const VALUE_THRESHOLD_USDC = 0.005
 
@@ -226,32 +227,56 @@ export function runAgent(
         // ─── Phase 3: ACQUIRING ───────────────────────────────────────────
         phase('ACQUIRING')
         line('sys', 'Acquiring capability via x402...', 'ACQUIRING')
-        await sleep(560)
+        await sleep(420)
         line(
           'http',
           `GET /capabilities/web-search/${cheapest.id}`,
           'ACQUIRING',
           { indent: true },
         )
-        await sleep(380)
+        await sleep(280)
         line(
           'http',
           `← 402 · payment required · ${fmtPrice(cheapest.priceUsdc)} USDC`,
           'ACQUIRING',
           { indent: true },
         )
-        await sleep(420)
+        await sleep(280)
         line('http', 'Settling on solana:devnet...', 'ACQUIRING', { indent: true })
-        await sleep(900)
 
-        const txHash = `pending-${cryptoUuid()}`
+        let txHash: string
+        let settled = false
+        try {
+          txHash = await settleOnchain({
+            task,
+            capability: cap.label,
+            providerId: cheapest.id,
+            amountUsdc: cheapest.priceUsdc,
+          })
+          settled = true
+        } catch (err) {
+          console.error('[settleOnchain]', err)
+          txHash = `pending-${cryptoUuid()}`
+          line(
+            'http',
+            `! settlement error: ${
+              err instanceof Error ? err.message : 'unknown'
+            } — falling back to placeholder`,
+            'ACQUIRING',
+            { indent: true },
+          )
+          await sleep(200)
+        }
+
         line(
           'settled',
-          `✓ Settled (pending CDP) — capability acquired · ${shortHash(txHash)}`,
+          settled
+            ? `✓ Settled onchain — capability acquired · ${shortHash(txHash)}`
+            : `✓ Settled (pending) — capability acquired · ${shortHash(txHash)}`,
           'ACQUIRING',
           { indent: true, txHash },
         )
-        await sleep(560)
+        await sleep(380)
 
         // ─── Real Tavily call ─────────────────────────────────────────────
         if (!cheapest.endpoint) {
@@ -260,6 +285,7 @@ export function runAgent(
         }
         const searchRes = await fetch(
           `${base}${cheapest.endpoint}?q=${encodeURIComponent(task)}`,
+          { headers: { 'X-Payment-Tx': txHash } },
         )
         if (!searchRes.ok) {
           fail(`Search endpoint returned ${searchRes.status}`)
