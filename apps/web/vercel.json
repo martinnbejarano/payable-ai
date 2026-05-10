@@ -1,5 +1,7 @@
 {
   "framework": "nextjs",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm --filter @payable-ai/web build",
   "env": {
     "NEXT_PUBLIC_SOLANA_NETWORK": "devnet"
   }
