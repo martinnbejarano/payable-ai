@@ -75,7 +75,7 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
 
         <p className="mx-auto mt-7 max-w-[620px] text-center text-[16.5px] leading-[1.55] text-zinc-400">
           AI agents can think, plan, and act — but they can&apos;t pay.
-          <span className="text-zinc-200"> Payable.ai</span> gives agents the economic layer they&apos;ve been missing:
+          <span className="text-zinc-200"> Payable.ai</span> {" "}gives agents the economic layer they&apos;ve been missing:
           discover APIs, evaluate cost vs value, and settle in Solana USDC.
         </p>
 

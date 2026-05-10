@@ -1,0 +1,11 @@
+{
+  "remoteName": "origin",
+  "projects": [
+    {
+      "id": "prj_RP1z64VT1DFsgdsLNQ0RTj5vaNLQ",
+      "name": "payable-ai-web",
+      "directory": "apps/web",
+      "orgId": "team_hGyRGLydfatNCnJ2pc1Z4tr5"
+    }
+  ]
+}
